@@ -216,7 +216,19 @@
       var piCam = cameras.pi_camera;
       var parts = [];
       devs.forEach(function (d) {
-        parts.push('<div class="camera-row"><span class="cam-name">' + (d.name || d.device) + '</span><span class="cam-dev">' + (d.device || '') + '</span></div>');
+        var line = '<div class="camera-row">';
+        line += '<span class="cam-name">' + (d.name || d.device) + '</span>';
+        line += '<span class="cam-meta">';
+        if (d.in_use) {
+          line += '<span class="cam-in-use" title="In Nutzung">' + (d.used_by_name || '') + ' <span class="cam-pid">(PID ' + (d.used_by_pid || '') + ')</span>';
+          if (d.fps != null) line += ' · <span class="cam-fps">' + d.fps + ' FPS</span>';
+          if (d.used_by_rss_mb != null) line += ' · <span class="cam-rss">' + d.used_by_rss_mb + ' MB</span>';
+          line += '</span>';
+        } else {
+          line += '<span class="cam-idle">frei</span>';
+        }
+        line += '</span></div>';
+        parts.push(line);
       });
       if (piCam && piCam.detected) {
         parts.push('<div class="camera-row pi-cam"><span class="cam-name">' + (piCam.type || 'Pi Camera') + '</span><span class="cam-dev">erkannt</span></div>');

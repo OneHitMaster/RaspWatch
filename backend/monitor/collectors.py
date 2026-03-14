@@ -466,20 +466,93 @@ def get_voltage() -> dict[str, Any]:
 # --- Cameras (Video4Linux + Pi legacy) ---
 
 
+def _pid_using_device(dev_path: str) -> tuple[int | None, str]:
+    """Return (pid, comm) of process that has dev_path open, or (None, '')."""
+    proc = Path("/proc")
+    dev_name = dev_path.replace("/dev/", "")
+    if not proc.exists():
+        return (None, "")
+    for pid_dir in proc.iterdir():
+        if not pid_dir.name.isdigit():
+            continue
+        fd_dir = pid_dir / "fd"
+        if not fd_dir.exists():
+            continue
+        try:
+            for fd in fd_dir.iterdir():
+                try:
+                    link = os.readlink(str(fd))
+                    if link == dev_path or dev_path in link or link.endswith(dev_name):
+                        comm = _read_file(pid_dir / "comm", "").strip().strip("()") or "?"
+                        return (int(pid_dir.name), comm)
+                except (OSError, RuntimeError):
+                    continue
+        except (OSError, PermissionError):
+            continue
+    return (None, "")
+
+
+def _process_rss_mb(pid: int) -> float | None:
+    """Return RSS in MB for process pid, or None."""
+    try:
+        raw = _read_file(Path("/proc") / str(pid) / "status")
+        if not raw:
+            return None
+        for line in raw.split("\n"):
+            if line.startswith("VmRSS:"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    return round(int(parts[1]) / 1024.0, 2)  # kB -> MB
+                return None
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _get_camera_fps(dev_path: str) -> float | None:
+    """Return current FPS from v4l2-ctl --get-parm if available."""
+    if not os.path.isfile("/usr/bin/v4l2-ctl"):
+        return None
+    try:
+        r = subprocess.run(
+            ["v4l2-ctl", "-d", dev_path, "--get-parm"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        if r.returncode != 0:
+            return None
+        # e.g. "Frame rate: 30.000 (30/1)" or "frame rate: 30.000 (1000/33333)"
+        m = re.search(r"[Ff]rame rate:\s*([\d.]+)", r.stdout or "")
+        if m:
+            return round(float(m.group(1)), 1)
+        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+        return None
+
+
 def get_cameras() -> dict[str, Any]:
-    """List video capture devices from /sys/class/video4linux and optional vcgencmd get_camera."""
+    """List video devices with usage (which process, FPS if available)."""
     result: list[dict[str, Any]] = []
     if SYS_VIDEO4LINUX.exists():
         for dev_dir in sorted(SYS_VIDEO4LINUX.iterdir(), key=lambda p: p.name):
             if not dev_dir.name.startswith("video"):
                 continue
             name = _read_file(dev_dir / "name", dev_dir.name)
+            path = f"/dev/{dev_dir.name}"
+            pid, comm = _pid_using_device(path)
+            fps = _get_camera_fps(path) if pid else None  # FPS only when in use
+            rss_mb = _process_rss_mb(pid) if pid else None
             result.append({
                 "device": dev_dir.name,
                 "name": name or dev_dir.name,
-                "path": f"/dev/{dev_dir.name}",
+                "path": path,
+                "in_use": pid is not None,
+                "used_by_pid": pid,
+                "used_by_name": comm,
+                "fps": fps,
+                "used_by_rss_mb": rss_mb,
             })
-    # Raspberry Pi legacy camera (vcgencmd)
     vc_cam = _vcgencmd(["get_camera"])
     pi_camera = None
     if vc_cam:
