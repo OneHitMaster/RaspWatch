@@ -226,18 +226,41 @@
         <div class="setting-row">
           <label><input type="checkbox" id="setting-alerts-enabled"> Alerts aktivieren</label>
         </div>
-        <p class="setting-hint setting-hint-sm">Bei aktivierten Alerts kannst du im Dashboard Benachrichtigungen erlauben – dann erscheinen Pop-ups auf dem Handy, sobald ein Schwellwert überschritten wird.</p>
         <div class="setting-row">
-          <label for="setting-cpu-warn">CPU-Warnung (%)</label>
-          <input type="number" id="setting-cpu-warn" min="1" max="100" value="90">
+          <label><input type="checkbox" id="setting-alerts-sound" checked> Sound bei Benachrichtigung</label>
         </div>
-        <div class="setting-row">
-          <label for="setting-temp-warn">Temperatur-Warnung (°C)</label>
-          <input type="number" id="setting-temp-warn" min="0" max="120" value="80">
-        </div>
-        <div class="setting-row">
-          <label for="setting-disk-warn">Speicher-Warnung (%)</label>
-          <input type="number" id="setting-disk-warn" min="1" max="100" value="90">
+        <p class="setting-hint setting-hint-sm">Intervall: 0 = nur einmal beim Auslösen, &gt;0 = Meldung alle X Sekunden wiederholen (z. B. Temp unter 40° alle 5 Sek).</p>
+        <div class="alert-rules">
+          <div class="alert-rule">
+            <label class="ar-enable"><input type="checkbox" id="setting-cpu-high-enabled" checked> CPU über</label>
+            <input type="number" id="setting-cpu-high-value" min="0" max="100" value="90" class="ar-value" title="%"> <span class="ar-unit">%</span>
+            <label class="ar-interval">Intervall <input type="number" id="setting-cpu-high-interval" min="0" max="3600" value="0" step="1"> s</label>
+          </div>
+          <div class="alert-rule">
+            <label class="ar-enable"><input type="checkbox" id="setting-cpu-low-enabled"> CPU unter</label>
+            <input type="number" id="setting-cpu-low-value" min="0" max="100" value="10" class="ar-value"> <span class="ar-unit">%</span>
+            <label class="ar-interval">Intervall <input type="number" id="setting-cpu-low-interval" min="0" max="3600" value="0"> s</label>
+          </div>
+          <div class="alert-rule">
+            <label class="ar-enable"><input type="checkbox" id="setting-temp-high-enabled" checked> Temp über</label>
+            <input type="number" id="setting-temp-high-value" min="0" max="120" value="80" class="ar-value"> <span class="ar-unit">°C</span>
+            <label class="ar-interval">Intervall <input type="number" id="setting-temp-high-interval" min="0" max="3600" value="0"> s</label>
+          </div>
+          <div class="alert-rule">
+            <label class="ar-enable"><input type="checkbox" id="setting-temp-low-enabled"> Temp unter</label>
+            <input type="number" id="setting-temp-low-value" min="-40" max="100" value="40" class="ar-value"> <span class="ar-unit">°C</span>
+            <label class="ar-interval">Intervall <input type="number" id="setting-temp-low-interval" min="0" max="3600" value="5"> s</label>
+          </div>
+          <div class="alert-rule">
+            <label class="ar-enable"><input type="checkbox" id="setting-disk-high-enabled" checked> Speicher über</label>
+            <input type="number" id="setting-disk-high-value" min="0" max="100" value="90" class="ar-value"> <span class="ar-unit">%</span>
+            <label class="ar-interval">Intervall <input type="number" id="setting-disk-high-interval" min="0" max="3600" value="0"> s</label>
+          </div>
+          <div class="alert-rule">
+            <label class="ar-enable"><input type="checkbox" id="setting-mem-high-enabled"> RAM über</label>
+            <input type="number" id="setting-mem-high-value" min="0" max="100" value="90" class="ar-value"> <span class="ar-unit">%</span>
+            <label class="ar-interval">Intervall <input type="number" id="setting-mem-high-interval" min="0" max="3600" value="0"> s</label>
+          </div>
         </div>
         <div class="setting-row">
           <label for="setting-webhook">Webhook-URL (optional)</label>

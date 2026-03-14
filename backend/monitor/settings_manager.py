@@ -19,6 +19,30 @@ DEFAULTS = {
     "theme": "dark",
     "copyright": "© 2026 TheD3vil",
     "alerts_enabled": False,
+    "alerts_sound": True,
+    # CPU
+    "cpu_high_enabled": True,
+    "cpu_high_value": 90,
+    "cpu_high_interval_sec": 0,
+    "cpu_low_enabled": False,
+    "cpu_low_value": 10,
+    "cpu_low_interval_sec": 0,
+    # Temp
+    "temp_high_enabled": True,
+    "temp_high_value": 80,
+    "temp_high_interval_sec": 0,
+    "temp_low_enabled": False,
+    "temp_low_value": 40,
+    "temp_low_interval_sec": 5,
+    # Disk
+    "disk_high_enabled": True,
+    "disk_high_value": 90,
+    "disk_high_interval_sec": 0,
+    # Memory
+    "mem_high_enabled": False,
+    "mem_high_value": 90,
+    "mem_high_interval_sec": 0,
+    # Legacy short names (kept for compatibility, mapped in alerts)
     "cpu_warn": 90,
     "temp_warn": 80,
     "disk_warn": 90,

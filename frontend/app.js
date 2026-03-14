@@ -86,8 +86,11 @@
       saveServer: 'Auf Server speichern',
       settingsHint: 'Lokale Einstellungen werden im Browser gespeichert. Server-Einstellungen in',
       cpuAlert: 'CPU über Schwellwert',
+      cpuLowAlert: 'CPU unter Schwellwert',
       tempAlert: 'Temperatur über Schwellwert',
+      tempLowAlert: 'Temperatur unter Schwellwert',
       diskAlert: 'Speicher über Schwellwert',
+      memAlert: 'RAM über Schwellwert',
       alertTriggered: 'Schwellwert überschritten',
     },
     en: {
@@ -105,8 +108,11 @@
       saveServer: 'Save to server',
       settingsHint: 'Local settings are stored in the browser. Server settings in',
       cpuAlert: 'CPU above threshold',
+      cpuLowAlert: 'CPU below threshold',
       tempAlert: 'Temperature above threshold',
+      tempLowAlert: 'Temperature below threshold',
       diskAlert: 'Disk above threshold',
+      memAlert: 'RAM above threshold',
       alertTriggered: 'threshold exceeded',
     },
   };
@@ -236,31 +242,59 @@
       alertBadge.style.display = active.length ? 'inline-flex' : 'none';
       alertBadge.textContent = active.length;
     }
-    if (typeof Notification !== 'undefined' && active.length) {
-      var newAlerts = active.filter(function (k) { return lastActiveAlerts.indexOf(k) === -1; });
-      if (newAlerts.length) {
-        var show = function () {
-          var t = (i18n[getSettings().lang] || i18n.de);
-          var title = 'RaspWatch';
-          newAlerts.forEach(function (key) {
-            var body = '';
-            if (key === 'cpu') body = (t.cpuAlert || 'CPU über Schwellwert') + ': ' + (data.cpu && data.cpu.usage_percent != null ? data.cpu.usage_percent + ' %' : '');
-            else if (key === 'temp') body = (t.tempAlert || 'Temperatur über Schwellwert') + ': ' + (data.temperature && data.temperature.cpu != null ? data.temperature.cpu + ' °C' : '');
-            else if (key === 'disk') body = (t.diskAlert || 'Speicher über Schwellwert') + ': ' + (data.disk && data.disk.usage_percent != null ? data.disk.usage_percent + ' %' : '');
-            else body = key + ' ' + (t.alertTriggered || 'Schwellwert überschritten');
-            try {
-              new Notification(title, { body: body || title, tag: 'raspwatch-' + key });
-            } catch (e) {}
-          });
-        };
-        if (Notification.permission === 'granted') show();
-        else if (Notification.permission === 'default' && !notificationPermissionAsked) {
-          notificationPermissionAsked = true;
-          Notification.requestPermission().then(function (p) { if (p === 'granted') show(); });
-        }
+    var notifyNow = data.alerts_notify_now || [];
+    var playSound = !!data.alerts_sound;
+    if (notifyNow.length && typeof Notification !== 'undefined') {
+      var t = (i18n[getSettings().lang] || i18n.de);
+      var title = 'RaspWatch';
+      var show = function () {
+        if (playSound) playAlertSound();
+        notifyNow.forEach(function (key) {
+          var body = alertBody(key, data, t);
+          try {
+            new Notification(title, { body: body || title, tag: 'raspwatch-' + key });
+          } catch (e) {}
+        });
+      };
+      if (Notification.permission === 'granted') show();
+      else if (Notification.permission === 'default' && !notificationPermissionAsked) {
+        notificationPermissionAsked = true;
+        Notification.requestPermission().then(function (p) { if (p === 'granted') show(); });
       }
     }
     lastActiveAlerts = active.slice ? active.slice() : [];
+  }
+
+  function alertBody(key, data, t) {
+    var cpu = data.cpu && data.cpu.usage_percent;
+    var temp = data.temperature && data.temperature.cpu;
+    var disk = data.disk && data.disk.usage_percent;
+    var mem = data.memory && data.memory.usage_percent;
+    if (key === 'cpu_high') return (t.cpuAlert || 'CPU über Schwellwert') + ': ' + (cpu != null ? cpu + ' %' : '');
+    if (key === 'cpu_low') return (t.cpuLowAlert || 'CPU unter Schwellwert') + ': ' + (cpu != null ? cpu + ' %' : '');
+    if (key === 'temp_high') return (t.tempAlert || 'Temperatur über Schwellwert') + ': ' + (temp != null ? temp + ' °C' : '');
+    if (key === 'temp_low') return (t.tempLowAlert || 'Temperatur unter Schwellwert') + ': ' + (temp != null ? temp + ' °C' : '');
+    if (key === 'disk_high') return (t.diskAlert || 'Speicher über Schwellwert') + ': ' + (disk != null ? disk + ' %' : '');
+    if (key === 'mem_high') return (t.memAlert || 'RAM über Schwellwert') + ': ' + (mem != null ? mem + ' %' : '');
+    return key + ' ' + (t.alertTriggered || 'Schwellwert');
+  }
+
+  function playAlertSound() {
+    try {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return;
+      var ctx = new C();
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.2);
+    } catch (e) {}
   }
 
   function updateAlertLog() {
@@ -490,15 +524,29 @@
     if (langSel) langSel.value = s.lang || 'de';
     applyLang(s.lang || 'de');
     fetchJson('api/settings').then(function (server) {
-      var cb = document.getElementById('setting-alerts-enabled');
-      var cpuW = document.getElementById('setting-cpu-warn');
-      var tempW = document.getElementById('setting-temp-warn');
-      var diskW = document.getElementById('setting-disk-warn');
+      function set(id, val, def) { var el = document.getElementById(id); if (el) el.value = val != null ? val : def; }
+      function setCheck(id, val) { var el = document.getElementById(id); if (el) el.checked = !!val; }
+      setCheck('setting-alerts-enabled', server.alerts_enabled);
+      setCheck('setting-alerts-sound', server.alerts_sound !== false);
+      setCheck('setting-cpu-high-enabled', server.cpu_high_enabled !== false);
+      set('setting-cpu-high-value', server.cpu_high_value, 90);
+      set('setting-cpu-high-interval', server.cpu_high_interval_sec, 0);
+      setCheck('setting-cpu-low-enabled', server.cpu_low_enabled);
+      set('setting-cpu-low-value', server.cpu_low_value, 10);
+      set('setting-cpu-low-interval', server.cpu_low_interval_sec, 0);
+      setCheck('setting-temp-high-enabled', server.temp_high_enabled !== false);
+      set('setting-temp-high-value', server.temp_high_value, 80);
+      set('setting-temp-high-interval', server.temp_high_interval_sec, 0);
+      setCheck('setting-temp-low-enabled', server.temp_low_enabled);
+      set('setting-temp-low-value', server.temp_low_value, 40);
+      set('setting-temp-low-interval', server.temp_low_interval_sec, 5);
+      setCheck('setting-disk-high-enabled', server.disk_high_enabled !== false);
+      set('setting-disk-high-value', server.disk_high_value, 90);
+      set('setting-disk-high-interval', server.disk_high_interval_sec, 0);
+      setCheck('setting-mem-high-enabled', server.mem_high_enabled);
+      set('setting-mem-high-value', server.mem_high_value, 90);
+      set('setting-mem-high-interval', server.mem_high_interval_sec, 0);
       var webhook = document.getElementById('setting-webhook');
-      if (cb) cb.checked = !!server.alerts_enabled;
-      if (cpuW) cpuW.value = server.cpu_warn != null ? server.cpu_warn : 90;
-      if (tempW) tempW.value = server.temp_warn != null ? server.temp_warn : 80;
-      if (diskW) diskW.value = server.disk_warn != null ? server.disk_warn : 90;
       if (webhook) webhook.value = server.webhook_url || '';
     }).catch(function () {});
   }
@@ -583,22 +631,40 @@
     var saveServerBtn = document.getElementById('setting-save-server');
     if (saveServerBtn) {
       saveServerBtn.addEventListener('click', function () {
-        var ref = parseInt(document.getElementById('setting-refresh').value, 10) || 3;
-        var theme = document.getElementById('setting-theme').value;
-        var logLines = parseInt(document.getElementById('setting-log-lines').value, 10) || 200;
-        var lang = (document.getElementById('setting-lang') && document.getElementById('setting-lang').value) || 'de';
-        var alertsOn = document.getElementById('setting-alerts-enabled') && document.getElementById('setting-alerts-enabled').checked;
-        var cpuWarn = parseInt(document.getElementById('setting-cpu-warn') && document.getElementById('setting-cpu-warn').value, 10) || 90;
-        var tempWarn = parseInt(document.getElementById('setting-temp-warn') && document.getElementById('setting-temp-warn').value, 10) || 80;
-        var diskWarn = parseInt(document.getElementById('setting-disk-warn') && document.getElementById('setting-disk-warn').value, 10) || 90;
-        var webhookUrl = (document.getElementById('setting-webhook') && document.getElementById('setting-webhook').value) || '';
+        var g = function (id) { var el = document.getElementById(id); return el ? el.value : ''; };
+        var c = function (id) { var el = document.getElementById(id); return el && el.checked; };
+        var n = function (id, def) { return parseInt(g(id), 10) || def; };
+        var payload = {
+          refresh_interval_sec: n('setting-refresh', 3),
+          log_lines: n('setting-log-lines', 200),
+          theme: document.getElementById('setting-theme') && document.getElementById('setting-theme').value,
+          lang: (document.getElementById('setting-lang') && document.getElementById('setting-lang').value) || 'de',
+          alerts_enabled: c('setting-alerts-enabled'),
+          alerts_sound: c('setting-alerts-sound'),
+          cpu_high_enabled: c('setting-cpu-high-enabled'),
+          cpu_high_value: n('setting-cpu-high-value', 90),
+          cpu_high_interval_sec: n('setting-cpu-high-interval', 0),
+          cpu_low_enabled: c('setting-cpu-low-enabled'),
+          cpu_low_value: n('setting-cpu-low-value', 10),
+          cpu_low_interval_sec: n('setting-cpu-low-interval', 0),
+          temp_high_enabled: c('setting-temp-high-enabled'),
+          temp_high_value: n('setting-temp-high-value', 80),
+          temp_high_interval_sec: n('setting-temp-high-interval', 0),
+          temp_low_enabled: c('setting-temp-low-enabled'),
+          temp_low_value: n('setting-temp-low-value', 40),
+          temp_low_interval_sec: n('setting-temp-low-interval', 5),
+          disk_high_enabled: c('setting-disk-high-enabled'),
+          disk_high_value: n('setting-disk-high-value', 90),
+          disk_high_interval_sec: n('setting-disk-high-interval', 0),
+          mem_high_enabled: c('setting-mem-high-enabled'),
+          mem_high_value: n('setting-mem-high-value', 90),
+          mem_high_interval_sec: n('setting-mem-high-interval', 0),
+          webhook_url: (document.getElementById('setting-webhook') && document.getElementById('setting-webhook').value) || '',
+        };
         fetch('api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            refresh_interval_sec: ref, log_lines: logLines, theme: theme, lang: lang,
-            alerts_enabled: alertsOn, cpu_warn: cpuWarn, temp_warn: tempWarn, disk_warn: diskWarn, webhook_url: webhookUrl,
-          }),
+          body: JSON.stringify(payload),
         }).then(function (r) { return r.json(); }).then(function () {
           saveSettingsFromForm();
         }).catch(function () {});

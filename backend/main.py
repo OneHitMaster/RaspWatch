@@ -18,7 +18,7 @@ from fastapi import Body, FastAPI, Query
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from monitor.alerts import check_alerts, get_alert_status
+from monitor.alerts import check_alerts, get_alert_status, get_and_clear_notify_now, set_last_notify_now
 from monitor.collectors import collect_dynamic, collect_static
 from monitor.history import get_history, init_db, write_snapshot
 from monitor.logs_reader import get_logs
@@ -41,6 +41,8 @@ def get_cached_dynamic() -> dict | None:
         out = copy.deepcopy(_dynamic_cache)
         out["_stale"] = (time.time() - _dynamic_cache_ts) > (SAMPLER_INTERVAL * 3)
     out["alerts_active"] = get_alert_status()["active"]
+    out["alerts_notify_now"] = get_and_clear_notify_now()
+    out["alerts_sound"] = load_settings().get("alerts_sound", True)
     return out
 
 
@@ -55,7 +57,8 @@ def _sampler_loop() -> None:
                 _dynamic_cache = data
                 _dynamic_cache_ts = time.time()
             try:
-                check_alerts(data, load_settings())
+                _active, _notify = check_alerts(data, load_settings())
+                set_last_notify_now(_notify)
             except Exception:
                 pass
             tick += 1
@@ -79,7 +82,8 @@ async def lifespan(app: FastAPI):
             _dynamic_cache = data
             _dynamic_cache_ts = time.time()
         write_snapshot(data)
-        check_alerts(data, load_settings())
+        _active, _notify = check_alerts(data, load_settings())
+        set_last_notify_now(_notify)
     except Exception:
         pass
     t = threading.Thread(target=_sampler_loop, daemon=True)
