@@ -340,10 +340,12 @@
           maintainAspectRatio: true,
           plugins: { legend: { display: false } },
           scales: {
-            x: { ticks: { maxTicksLimit: 10, color: 'var(--text-muted)' } },
-            y: { min: 0, ticks: { color: 'var(--text-muted)' } },
+            x: { ticks: { maxTicksLimit: 12, color: 'var(--text-muted)', maxRotation: 45 } },
+            y: { min: 0, ticks: { color: 'var(--text-muted)', maxTicksLimit: 8 } },
           },
+          elements: { point: { radius: 0, hitRadius: 6 } },
         };
+        var dsOpt = { fill: true, tension: 0.3 };
         var accent = 'rgb(56, 189, 248)';
         var cpuCanvas = document.getElementById('chart-cpu');
         if (cpuCanvas && data.some(function (d) { return d.cpu != null; })) {
@@ -351,7 +353,7 @@
             type: 'line',
             data: {
               labels: labels,
-              datasets: [{ label: 'CPU %', data: data.map(function (d) { return d.cpu; }), borderColor: accent, backgroundColor: 'rgba(56, 189, 248, 0.1)', fill: true, tension: 0.2 }],
+              datasets: [{ label: 'CPU %', data: data.map(function (d) { return d.cpu; }), borderColor: accent, backgroundColor: 'rgba(56, 189, 248, 0.1)', ...dsOpt }],
             },
             options: chartOpts,
           });
@@ -362,7 +364,7 @@
             type: 'line',
             data: {
               labels: labels,
-              datasets: [{ label: 'Mem %', data: data.map(function (d) { return d.mem; }), borderColor: accent, backgroundColor: 'rgba(56, 189, 248, 0.1)', fill: true, tension: 0.2 }],
+              datasets: [{ label: 'Mem %', data: data.map(function (d) { return d.mem; }), borderColor: accent, backgroundColor: 'rgba(56, 189, 248, 0.1)', ...dsOpt }],
             },
             options: chartOpts,
           });
@@ -371,13 +373,13 @@
         if (tempCanvas && (data.some(function (d) { return d.temp_cpu != null; }) || data.some(function (d) { return d.temp_pmic != null; }) || data.some(function (d) { return d.temp_rp1 != null; }))) {
           var datasets = [];
           if (data.some(function (d) { return d.temp_cpu != null; })) {
-            datasets.push({ label: 'CPU', data: data.map(function (d) { return d.temp_cpu; }), borderColor: 'rgb(56, 189, 248)', fill: false, tension: 0.2 });
+            datasets.push({ label: 'CPU', data: data.map(function (d) { return d.temp_cpu; }), borderColor: 'rgb(56, 189, 248)', fill: false, tension: 0.3, pointRadius: 0, hitRadius: 6 });
           }
           if (data.some(function (d) { return d.temp_pmic != null; })) {
-            datasets.push({ label: 'PMIC', data: data.map(function (d) { return d.temp_pmic; }), borderColor: 'rgb(252, 211, 77)', fill: false, tension: 0.2 });
+            datasets.push({ label: 'PMIC', data: data.map(function (d) { return d.temp_pmic; }), borderColor: 'rgb(252, 211, 77)', fill: false, tension: 0.3, pointRadius: 0, hitRadius: 6 });
           }
           if (data.some(function (d) { return d.temp_rp1 != null; })) {
-            datasets.push({ label: 'RP1', data: data.map(function (d) { return d.temp_rp1; }), borderColor: 'rgb(134, 239, 172)', fill: false, tension: 0.2 });
+            datasets.push({ label: 'RP1', data: data.map(function (d) { return d.temp_rp1; }), borderColor: 'rgb(134, 239, 172)', fill: false, tension: 0.3, pointRadius: 0, hitRadius: 6 });
           }
           chartInstances.temp = new Chart(tempCanvas, {
             type: 'line',

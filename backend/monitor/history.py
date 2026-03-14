@@ -58,8 +58,46 @@ def write_snapshot(data: dict[str, Any]) -> None:
         conn.execute("DELETE FROM metrics WHERE ts < ?", (cutoff,))
 
 
-def get_history(period: str = "1h") -> list[dict[str, Any]]:
-    """period: 1h, 6h, 24h, 7d"""
+MAX_POINTS = 150  # Max data points per chart for smooth rendering
+
+
+def _downsample(rows: list[dict[str, Any]], max_pts: int = MAX_POINTS) -> list[dict[str, Any]]:
+    """Reduce to max_pts by averaging in time buckets. Keeps first and last ts per bucket."""
+    n = len(rows)
+    if n <= max_pts:
+        return rows
+    result = []
+    bucket_size = n / max_pts
+    for i in range(max_pts):
+        start_idx = int(i * bucket_size)
+        end_idx = min(int((i + 1) * bucket_size), n)
+        if start_idx >= end_idx:
+            continue
+        chunk = rows[start_idx:end_idx]
+        first = chunk[0]
+        avg = {
+            "ts": first["ts"],
+            "cpu": _avg([r["cpu"] for r in chunk]),
+            "mem": _avg([r["mem"] for r in chunk]),
+            "swap": _avg([r["swap"] for r in chunk]),
+            "disk": _avg([r["disk"] for r in chunk]),
+            "temp_cpu": _avg([r["temp_cpu"] for r in chunk]),
+            "temp_pmic": _avg([r["temp_pmic"] for r in chunk]),
+            "temp_rp1": _avg([r["temp_rp1"] for r in chunk]),
+        }
+        result.append(avg)
+    return result
+
+
+def _avg(vals: list[float | None]) -> float | None:
+    clean = [v for v in vals if v is not None]
+    if not clean:
+        return None
+    return round(sum(clean) / len(clean), 1)
+
+
+def get_history(period: str = "1h", max_points: int = MAX_POINTS) -> list[dict[str, Any]]:
+    """period: 1h, 6h, 24h, 7d. Returns at most max_points downsampled."""
     now = time.time()
     if period == "1h":
         start = now - 3600
@@ -77,7 +115,7 @@ def get_history(period: str = "1h") -> list[dict[str, Any]]:
             (start,),
         )
         rows = cur.fetchall()
-    return [
+    raw = [
         {
             "ts": r["ts"],
             "cpu": r["cpu"],
@@ -90,3 +128,4 @@ def get_history(period: str = "1h") -> list[dict[str, Any]]:
         }
         for r in rows
     ]
+    return _downsample(raw, max_points)
