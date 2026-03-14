@@ -292,13 +292,24 @@ try {
     var logEl = document.getElementById('alert-log');
     if (logEl && Array.isArray(data.alerts_log)) {
       var log = data.alerts_log;
-      if (log.length === 0) {
+      var dismissed = [];
+      try {
+        dismissed = JSON.parse(sessionStorage.getItem('raspwatch_dismissed_log_ids') || '[]');
+      } catch (err) {}
+      var logFiltered = log.filter(function (e) { return e.id == null || dismissed.indexOf(e.id) === -1; });
+      if (logFiltered.length === 0) {
         logEl.innerHTML = 'Keine Alerts.';
       } else {
-        logEl.innerHTML = log.slice().reverse().slice(0, 15).map(function (e) {
-          var t = new Date((e.ts || 0) * 1000).toLocaleTimeString();
+        var t = (i18n[getSettings().lang] || i18n.de);
+        var dismissLabel = t.ackOne || 'Quitieren';
+        logEl.innerHTML = logFiltered.slice().reverse().slice(0, 15).map(function (e) {
+          var time = new Date((e.ts || 0) * 1000).toLocaleTimeString();
           var cls = (e.event === 'alert' || e.event === 'repeat') ? 'alert-entry alert' : 'alert-entry resolved';
-          return '<div class="' + cls + '">' + t + ' – ' + (e.message || e.type) + '</div>';
+          var msg = time + ' – ' + (e.message || e.type);
+          if (e.id != null) {
+            return '<div class="' + cls + ' alert-entry-row"><span class="alert-entry-text">' + msg + '</span><button type="button" class="alert-dismiss" data-id="' + e.id + '" title="' + dismissLabel + '">×</button></div>';
+          }
+          return '<div class="' + cls + ' alert-entry-row"><span class="alert-entry-text">' + msg + '</span></div>';
         }).join('');
       }
     }
@@ -341,16 +352,27 @@ try {
       var logEl = document.getElementById('alert-log');
       if (!logEl) return;
       var log = res.log || [];
-      if (log.length === 0) {
+      var dismissed = [];
+      try {
+        dismissed = JSON.parse(sessionStorage.getItem('raspwatch_dismissed_log_ids') || '[]');
+      } catch (err) {}
+      var logFiltered = log.filter(function (e) { return e.id == null || dismissed.indexOf(e.id) === -1; });
+      if (logFiltered.length === 0) {
         logEl.innerHTML = 'Keine Alerts.';
         return;
       }
-      logEl.innerHTML = log.slice().reverse().slice(0, 10).map(function (e) {
-        var t = new Date(e.ts * 1000).toLocaleTimeString();
+      var t = (i18n[getSettings().lang] || i18n.de);
+      var dismissLabel = t.ackOne || 'Quitieren';
+      logEl.innerHTML = logFiltered.slice().reverse().slice(0, 15).map(function (e) {
+        var time = new Date((e.ts || 0) * 1000).toLocaleTimeString();
         var cls = (e.event === 'alert' || e.event === 'repeat') ? 'alert-entry alert' : 'alert-entry resolved';
-        return '<div class="' + cls + '">' + t + ' – ' + (e.message || e.type) + '</div>';
+        var msg = time + ' – ' + (e.message || e.type);
+        if (e.id != null) {
+          return '<div class="' + cls + ' alert-entry-row"><span class="alert-entry-text">' + msg + '</span><button type="button" class="alert-dismiss" data-id="' + e.id + '" title="' + dismissLabel + '">×</button></div>';
+        }
+        return '<div class="' + cls + ' alert-entry-row"><span class="alert-entry-text">' + msg + '</span></div>';
       }).join('');
-  }).catch(function () {});
+    }).catch(function () {});
   }
 
   function fetchJson(url) {
@@ -676,6 +698,24 @@ try {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ keys: [btn.dataset.key] }),
           }).then(function () { tick(); });
+          return;
+        }
+        var dismissBtn = e.target.closest('.alert-dismiss');
+        if (dismissBtn && dismissBtn.dataset.id) {
+          e.preventDefault();
+          var id = parseInt(dismissBtn.dataset.id, 10);
+          if (!isNaN(id)) {
+            var ids = [];
+            try {
+              ids = JSON.parse(sessionStorage.getItem('raspwatch_dismissed_log_ids') || '[]');
+            } catch (err) {}
+            if (ids.indexOf(id) === -1) {
+              ids.push(id);
+              if (ids.length > 200) ids = ids.slice(-200);
+              sessionStorage.setItem('raspwatch_dismissed_log_ids', JSON.stringify(ids));
+            }
+            tick();
+          }
         }
       });
     }

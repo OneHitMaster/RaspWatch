@@ -24,12 +24,19 @@ ALERT_KEYS = (
 _alert_state: dict[str, bool] = {}
 _alert_last_notify_ts: dict[str, float] = {}
 _alert_log: deque[dict[str, Any]] = deque(maxlen=ALERT_LOG_MAX)
+_log_next_id: int = 0
 _acknowledged: set[str] = set()  # Quittierte Alerts – keine Wiederholungs-Meldungen mehr bis zur Auflösung
+
+
+def _next_log_id() -> int:
+    global _log_next_id
+    _log_next_id += 1
+    return _log_next_id
 
 
 def _load_persisted() -> None:
     """Load state, last-notify times and log from file."""
-    global _alert_state, _alert_last_notify_ts, _alert_log
+    global _alert_state, _alert_last_notify_ts, _alert_log, _log_next_id
     if not _STATE_FILE.exists():
         return
     try:
@@ -38,7 +45,13 @@ def _load_persisted() -> None:
         _alert_state = data.get("state") or {}
         _alert_last_notify_ts = data.get("last_notify_ts") or {}
         log = data.get("log") or []
+        _log_next_id = data.get("log_next_id", 0)
+        for e in log:
+            if e.get("id") is None:
+                e["id"] = _next_log_id()
         _alert_log = deque(log[-ALERT_LOG_MAX:], maxlen=ALERT_LOG_MAX)
+        if _alert_log:
+            _log_next_id = max((e.get("id", 0) for e in _alert_log), default=0) + 1
     except (json.JSONDecodeError, OSError):
         pass
 
@@ -51,6 +64,7 @@ def _save_persisted() -> None:
                 "state": _alert_state,
                 "last_notify_ts": _alert_last_notify_ts,
                 "log": list(_alert_log),
+                "log_next_id": _log_next_id,
             }, f, indent=0)
     except OSError:
         pass
@@ -201,7 +215,7 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
         if is_now and not was:
             # Just became active (evtl. war vorher quittiert – neu auslösen)
             _acknowledged.discard(key)
-            entry = {"ts": now, "type": key, "event": "alert", "message": label}
+            entry = {"id": _next_log_id(), "ts": now, "type": key, "event": "alert", "message": label}
             _alert_log.append(entry)
             _alert_state[key] = True
             _alert_last_notify_ts[key] = now
@@ -215,14 +229,14 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
                 _alert_last_notify_ts[key] = now
                 _save_persisted()
                 notify_now.append(key)
-                repeat_entry = {"ts": now, "type": key, "event": "repeat", "message": f"{label} (Wiederholung)"}
+                repeat_entry = {"id": _next_log_id(), "ts": now, "type": key, "event": "repeat", "message": f"{label} (Wiederholung)"}
                 _alert_log.append(repeat_entry)
                 if webhook_url:
                     _post_webhook(webhook_url, repeat_entry)
         elif not is_now and was:
             # Resolved
             _acknowledged.discard(key)
-            entry = {"ts": now, "type": key, "event": "resolved", "message": f"{label} – wieder normal"}
+            entry = {"id": _next_log_id(), "ts": now, "type": key, "event": "resolved", "message": f"{label} – wieder normal"}
             _alert_log.append(entry)
             _alert_state[key] = False
             _alert_last_notify_ts[key] = 0
