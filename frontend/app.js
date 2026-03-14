@@ -263,6 +263,19 @@
       }
     }
     lastActiveAlerts = active.slice ? active.slice() : [];
+    var logEl = document.getElementById('alert-log');
+    if (logEl && Array.isArray(data.alerts_log)) {
+      var log = data.alerts_log;
+      if (log.length === 0) {
+        logEl.innerHTML = 'Keine Alerts.';
+      } else {
+        logEl.innerHTML = log.slice().reverse().slice(0, 15).map(function (e) {
+          var t = new Date((e.ts || 0) * 1000).toLocaleTimeString();
+          var cls = e.event === 'alert' ? 'alert-entry alert' : 'alert-entry resolved';
+          return '<div class="' + cls + '">' + t + ' – ' + (e.message || e.type) + '</div>';
+        }).join('');
+      }
+    }
   }
 
   function alertBody(key, data, t) {

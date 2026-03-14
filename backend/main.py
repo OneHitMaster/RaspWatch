@@ -33,6 +33,15 @@ _history_stop = threading.Event()
 _sampler_stop = threading.Event()
 
 
+def _attach_alert_fields(out: dict) -> None:
+    """Add alert-related fields to a dynamic payload so the frontend always gets them."""
+    status = get_alert_status()
+    out["alerts_active"] = status["active"]
+    out["alerts_notify_now"] = get_and_clear_notify_now()
+    out["alerts_sound"] = load_settings().get("alerts_sound", True)
+    out["alerts_log"] = status["log"]
+
+
 def get_cached_dynamic() -> dict | None:
     """Return a copy of the last sampled dynamic data, or None if not yet sampled."""
     with _cache_lock:
@@ -40,9 +49,7 @@ def get_cached_dynamic() -> dict | None:
             return None
         out = copy.deepcopy(_dynamic_cache)
         out["_stale"] = (time.time() - _dynamic_cache_ts) > (SAMPLER_INTERVAL * 3)
-    out["alerts_active"] = get_alert_status()["active"]
-    out["alerts_notify_now"] = get_and_clear_notify_now()
-    out["alerts_sound"] = load_settings().get("alerts_sound", True)
+    _attach_alert_fields(out)
     return out
 
 
@@ -126,7 +133,9 @@ async def dynamic_json():
     out = get_cached_dynamic()
     if out is not None:
         return out
-    return collect_dynamic()
+    out = collect_dynamic()
+    _attach_alert_fields(out)
+    return out
 
 
 @app.get("/static.json")
@@ -141,7 +150,9 @@ async def api_status():
     out = get_cached_dynamic()
     if out is not None:
         return out
-    return collect_dynamic()
+    out = collect_dynamic()
+    _attach_alert_fields(out)
+    return out
 
 
 async def _sse_generator():

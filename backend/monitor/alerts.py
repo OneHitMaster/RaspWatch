@@ -181,15 +181,25 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
         "mem_high": _get_float(settings, "mem_high_interval_sec", 0),
     }
 
+    _LABELS = {
+        "cpu_high": "CPU über Schwellwert",
+        "cpu_low": "CPU unter Schwellwert",
+        "temp_high": "Temperatur über Schwellwert",
+        "temp_low": "Temperatur unter Schwellwert",
+        "disk_high": "Speicher über Schwellwert",
+        "mem_high": "RAM über Schwellwert",
+    }
+
     for key in ALERT_KEYS:
         was = _alert_state.get(key, False)
         is_now = key in active
         interval_sec = interval_settings.get(key, 0)
         last_ts = _alert_last_notify_ts.get(key, 0)
+        label = _LABELS.get(key, key)
 
         if is_now and not was:
             # Just became active
-            entry = {"ts": now, "type": key, "event": "alert", "message": f"{key} threshold"}
+            entry = {"ts": now, "type": key, "event": "alert", "message": label}
             _alert_log.append(entry)
             _alert_state[key] = True
             _alert_last_notify_ts[key] = now
@@ -204,10 +214,10 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
                 _save_persisted()
                 notify_now.append(key)
                 if webhook_url:
-                    _post_webhook(webhook_url, {"ts": now, "type": key, "event": "repeat", "message": f"{key} still active"})
+                    _post_webhook(webhook_url, {"ts": now, "type": key, "event": "repeat", "message": f"{label} (Wiederholung)"})
         elif not is_now and was:
             # Resolved
-            entry = {"ts": now, "type": key, "event": "resolved", "message": f"{key} back to normal"}
+            entry = {"ts": now, "type": key, "event": "resolved", "message": f"{label} – wieder normal"}
             _alert_log.append(entry)
             _alert_state[key] = False
             _alert_last_notify_ts[key] = 0
