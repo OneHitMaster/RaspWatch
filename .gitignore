@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 .env
 backend/settings.json
+backend/history.db
 *.log

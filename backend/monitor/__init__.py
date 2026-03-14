@@ -1,1 +1,1 @@
-# RPiMonitor - Modern monitoring for Raspberry Pi 5 and Linux
+# RaspWatch - Modern monitoring for Raspberry Pi 5 and Linux

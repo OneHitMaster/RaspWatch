@@ -1,4 +1,4 @@
-# RPiMonitor
+# RaspWatch
 
 Modernes Echtzeit-Monitoring für **Raspberry Pi 5** (und andere Linux-Systeme) – inspiriert von [XavierBerger/RPi-Monitor](https://github.com/XavierBerger/RPi-Monitor), auf aktuellem Stand.
 
@@ -8,8 +8,9 @@ Modernes Echtzeit-Monitoring für **Raspberry Pi 5** (und andere Linux-Systeme) 
 
 - **Dashboard**: CPU, RAM, Swap, Disk, Disk I/O, Temperatur (CPU/PMIC/RP1), Laufzeit, Netzwerk (inkl. pro Interface), Spannung (RPi), Top-Prozesse, System-Infos (OS, CPU-Modell, Kernel)
 - **Logs**: System-Logs per journalctl oder optionale Log-Datei, Zeilenanzahl wählbar, Auto-Refresh
-- **Einstellungen**: Aktualisierungsintervall, Design (Dark/Light), Log-Zeilen; Speicherung lokal (Browser) oder auf dem Server (`backend/settings.json`)
-- **API**: `dynamic.json`, `static.json`, `/api/status`, `/api/info`, `/api/logs`, `/api/settings` (GET/POST), `/health`, `/docs`
+- **Statistiken**: Verlaufsdiagramme (CPU, Speicher, Temperatur) über 1h/6h/24h/7d; Daten in SQLite (`backend/history.db`), 7 Tage Aufbewahrung
+- **Einstellungen**: Aktualisierungsintervall, Design (System/Dark/Light), Sprache (DE/EN), Log-Zeilen; Speicherung lokal (Browser) oder auf dem Server (`backend/settings.json`)
+- **API**: `dynamic.json`, `static.json`, `/api/status`, `/api/info`, `/api/logs`, `/api/history`, `/api/settings` (GET/POST), `/health`, `/docs`
 
 ## Schnellstart (lokal testen)
 
@@ -30,14 +31,14 @@ API-Docs: **http://localhost:9090/docs**
 ### 1. Projekt auf den Pi kopieren
 
 ```bash
-scp -r RPIMonitor pi@raspberrypi.local:~/
+scp -r RaspWatch pi@raspberrypi.local:~/
 ```
 
 ### 2. Python-Umgebung
 
 ```bash
 ssh pi@raspberrypi.local
-cd ~/RPIMonitor/backend
+cd ~/RaspWatch/backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -56,7 +57,7 @@ Im Browser: **http://raspberrypi.local:9090** (oder die IP des Pi).
 Für die Log-Ansicht „Log-Datei“ eine Datei angeben (z. B. syslog):
 
 ```bash
-export RPIMONITOR_LOG_FILE=/var/log/syslog
+export RASPWATCH_LOG_FILE=/var/log/syslog
 python main.py
 ```
 
@@ -64,18 +65,18 @@ python main.py
 
 ### 5. Optional: als Systemdienst (systemd)
 
-Datei anlegen: `/etc/systemd/system/rpimonitor.service`
+Kopieren: `sudo cp ~/RaspWatch/raspwatch.service /etc/systemd/system/`
 
 ```ini
 [Unit]
-Description=RPiMonitor Web Dashboard
+Description=RaspWatch Web Dashboard
 After=network.target
 
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/RPIMonitor/backend
-ExecStart=/home/pi/RPIMonitor/backend/venv/bin/python main.py
+WorkingDirectory=/home/pi/RaspWatch/backend
+ExecStart=/home/pi/RaspWatch/backend/venv/bin/python main.py
 Restart=on-failure
 Environment=PORT=9090
 
@@ -87,9 +88,9 @@ Aktivieren und starten:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable rpimonitor
-sudo systemctl start rpimonitor
-sudo systemctl status rpimonitor
+sudo systemctl enable raspwatch
+sudo systemctl start raspwatch
+sudo systemctl status raspwatch
 ```
 
 ## API
@@ -102,6 +103,7 @@ sudo systemctl status rpimonitor
 | `GET /api/status` | Wie dynamic.json |
 | `GET /api/info` | Wie static.json |
 | `GET /api/logs?source=journal|file&lines=200` | System-Logs |
+| `GET /api/history?period=1h\|6h\|24h\|7d` | Verlaufsdaten für Diagramme (CPU, RAM, Temperatur) |
 | `GET /api/settings` | Server-Einstellungen (Defaults + settings.json) |
 | `POST /api/settings` | Einstellungen speichern (JSON-Body) |
 | `GET /health` | Health-Check |

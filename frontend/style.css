@@ -298,6 +298,54 @@ body {
 }
 .logs-error { color: var(--danger); font-size: 0.9rem; margin-top: 0.5rem; }
 
+/* Statistiken / Charts */
+.stats-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.stats-toolbar select {
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.stats-toolbar button {
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent-dim);
+  color: var(--bg);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+.chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+.chart-card h2 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+.chart-card canvas {
+  max-width: 100%;
+  height: auto;
+}
+
 /* Settings page */
 .settings-form { max-width: 480px; }
 .settings-form h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--text-muted); }

@@ -1,5 +1,5 @@
 """
-Log reader for RPiMonitor: journalctl and optional log file.
+Log reader for RaspWatch: journalctl and optional log file.
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_LINES = 200
-LOG_FILE_ENV = "RPIMONITOR_LOG_FILE"
+LOG_FILE_ENV = "RASPWATCH_LOG_FILE"
 
 
 def get_logs_journal(lines: int = DEFAULT_LINES) -> dict[str, Any]:

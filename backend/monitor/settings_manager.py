@@ -1,5 +1,5 @@
 """
-Server-side settings for RPiMonitor (defaults and optional file).
+Server-side settings for RaspWatch (defaults and optional file).
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ DEFAULTS = {
 def load_settings() -> dict[str, Any]:
     """Load settings from file or env, merge with defaults."""
     out = dict(DEFAULTS)
-    out["log_file_path"] = os.environ.get("RPIMONITOR_LOG_FILE", "")
+    out["log_file_path"] = os.environ.get("RASPWATCH_LOG_FILE", "")
     if SETTINGS_FILE.exists():
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:

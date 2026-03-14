@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RPiMonitor</title>
+  <title>RaspWatch</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,12 +15,13 @@
     <header class="header">
       <div class="logo">
         <span class="logo-icon">◉</span>
-        <h1>RPiMonitor</h1>
+        <h1>RaspWatch</h1>
       </div>
       <nav class="nav">
-        <a href="#dashboard" class="nav-link active" data-page="dashboard">Dashboard</a>
-        <a href="#logs" class="nav-link" data-page="logs">Logs</a>
-        <a href="#settings" class="nav-link" data-page="settings">Einstellungen</a>
+        <a href="#dashboard" class="nav-link active" data-page="dashboard" data-i18n="navDashboard">Dashboard</a>
+        <a href="#stats" class="nav-link" data-page="stats" data-i18n="navStats">Statistiken</a>
+        <a href="#logs" class="nav-link" data-page="logs" data-i18n="navLogs">Logs</a>
+        <a href="#settings" class="nav-link" data-page="settings" data-i18n="navSettings">Einstellungen</a>
       </nav>
       <div class="host-info">
         <span class="hostname" id="hostname">—</span>
@@ -134,6 +136,33 @@
       </div>
     </main>
 
+    <!-- Statistiken / Charts -->
+    <main id="page-stats" class="page">
+      <div class="stats-toolbar">
+        <select id="stats-period">
+          <option value="1h" data-i18n="lastHour">Letzte Stunde</option>
+          <option value="6h" data-i18n="last6h">Letzte 6 Stunden</option>
+          <option value="24h" data-i18n="last24h">Letzte 24 Stunden</option>
+          <option value="7d" data-i18n="last7d">Letzte 7 Tage</option>
+        </select>
+        <button type="button" id="stats-refresh" data-i18n="update">Aktualisieren</button>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h2>CPU %</h2>
+          <canvas id="chart-cpu" width="400" height="120"></canvas>
+        </div>
+        <div class="chart-card">
+          <h2>Speicher %</h2>
+          <canvas id="chart-mem" width="400" height="120"></canvas>
+        </div>
+        <div class="chart-card">
+          <h2>Temperatur °C</h2>
+          <canvas id="chart-temp" width="400" height="120"></canvas>
+        </div>
+      </div>
+    </main>
+
     <!-- Logs -->
     <main id="page-logs" class="page">
       <div class="logs-toolbar">
@@ -167,6 +196,7 @@
         <div class="setting-row">
           <label for="setting-theme">Design</label>
           <select id="setting-theme">
+            <option value="system">System</option>
             <option value="dark">Dark</option>
             <option value="light">Light</option>
           </select>
@@ -176,17 +206,25 @@
           <input type="number" id="setting-log-lines" min="50" max="1000" value="200">
         </div>
         <div class="setting-row">
-          <button type="button" id="setting-save">Speichern (lokal)</button>
-          <button type="button" id="setting-save-server">Auf Server speichern</button>
+          <label for="setting-lang">Sprache</label>
+          <select id="setting-lang">
+            <option value="de">Deutsch</option>
+            <option value="en">English</option>
+          </select>
         </div>
-        <p class="setting-hint">Lokale Einstellungen werden im Browser gespeichert. Server-Einstellungen in <code>backend/settings.json</code>.</p>
+        <div class="setting-row">
+          <button type="button" id="setting-save" data-i18n="saveLocal">Speichern (lokal)</button>
+          <button type="button" id="setting-save-server" data-i18n="saveServer">Auf Server speichern</button>
+        </div>
+        <p class="setting-hint"><span data-i18n="settingsHint">Lokale Einstellungen werden im Browser gespeichert. Server-Einstellungen in</span> <code>backend/settings.json</code>.</p>
       </div>
     </main>
 
     <footer class="footer">
-      <span>RPiMonitor</span> · Port <span id="port">9090</span> · <span id="copyright">© 2026 TheD3vil</span>
+      <span>RaspWatch</span> · Port <span id="port">9090</span> · <span id="copyright">© 2026 TheD3vil</span>
     </footer>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

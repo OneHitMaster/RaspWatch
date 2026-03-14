@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'rpimonitor_settings';
+  const STORAGE_KEY = 'raspwatch_settings';
   const BYTES = ['B', 'KB', 'MB', 'GB', 'TB'];
   const DEFAULT_REFRESH_MS = 3000;
   const DEFAULT_THEME = 'dark';
@@ -20,17 +20,19 @@
         var s = JSON.parse(raw);
         return {
           refresh_interval_sec: s.refresh_interval_sec || 3,
-          theme: s.theme || DEFAULT_THEME,
+          theme: s.theme || 'system',
           log_lines: s.log_lines || 200,
           log_default_source: s.log_default_source || 'journal',
+          lang: s.lang || (navigator.language && navigator.language.startsWith('en') ? 'en' : 'de'),
         };
       }
     } catch (e) {}
     return {
       refresh_interval_sec: 3,
-      theme: DEFAULT_THEME,
+      theme: 'system',
       log_lines: 200,
       log_default_source: 'journal',
+      lang: navigator.language && navigator.language.startsWith('en') ? 'en' : 'de',
     };
   }
 
@@ -40,12 +42,63 @@
     } catch (e) {}
   }
 
+  function getEffectiveTheme(theme) {
+    if (theme === 'system') {
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    return theme === 'light' ? 'light' : 'dark';
+  }
+
   function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+    document.documentElement.setAttribute('data-theme', getEffectiveTheme(theme));
+  }
+
+  function applyLang(lang) {
+    var t = i18n[lang] || i18n.de;
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+      var key = el.getAttribute('data-i18n');
+      if (t[key]) el.textContent = t[key];
+    });
+    var s = getSettings();
+    var label = document.getElementById('refresh-label');
+    if (label && s.refresh_interval_sec) label.textContent = (t.refreshLabel || 'Aktualisierung alle') + ' ' + s.refresh_interval_sec + 's';
   }
 
   var refreshIntervalId = null;
   var logsAutoRefreshId = null;
+
+  var i18n = {
+    de: {
+      navDashboard: 'Dashboard',
+      navStats: 'Statistiken',
+      navLogs: 'Logs',
+      navSettings: 'Einstellungen',
+      refreshLabel: 'Aktualisierung alle',
+      lastHour: 'Letzte Stunde',
+      last6h: 'Letzte 6 Stunden',
+      last24h: 'Letzte 24 Stunden',
+      last7d: 'Letzte 7 Tage',
+      update: 'Aktualisieren',
+      saveLocal: 'Speichern (lokal)',
+      saveServer: 'Auf Server speichern',
+      settingsHint: 'Lokale Einstellungen werden im Browser gespeichert. Server-Einstellungen in',
+    },
+    en: {
+      navDashboard: 'Dashboard',
+      navStats: 'Statistics',
+      navLogs: 'Logs',
+      navSettings: 'Settings',
+      refreshLabel: 'Refresh every',
+      lastHour: 'Last hour',
+      last6h: 'Last 6 hours',
+      last24h: 'Last 24 hours',
+      last7d: 'Last 7 days',
+      update: 'Update',
+      saveLocal: 'Save (local)',
+      saveServer: 'Save to server',
+      settingsHint: 'Local settings are stored in the browser. Server settings in',
+    },
+  };
 
   function setLive(ok) {
     var dot = document.getElementById('status-dot');
@@ -192,8 +245,86 @@
     if (page) page.classList.add('active');
     if (link) link.classList.add('active');
     if (pageId === 'dashboard') tick();
+    if (pageId === 'stats') loadStats();
     if (pageId === 'logs') loadLogs();
     if (pageId === 'settings') initSettingsPage();
+  }
+
+  var chartInstances = { cpu: null, mem: null, temp: null };
+
+  function destroyCharts() {
+    ['cpu', 'mem', 'temp'].forEach(function (id) {
+      var canvas = document.getElementById('chart-' + id);
+      if (canvas && typeof Chart !== 'undefined') {
+        var existing = Chart.getChart(canvas);
+        if (existing) existing.destroy();
+        chartInstances[id] = null;
+      }
+    });
+  }
+
+  function loadStats() {
+    var period = document.getElementById('stats-period').value || '1h';
+    fetchJson('api/history?period=' + encodeURIComponent(period))
+      .then(function (res) {
+        var data = res.data || [];
+        if (data.length === 0) return;
+        destroyCharts();
+        var labels = data.map(function (d) {
+          return new Date(d.ts * 1000).toLocaleTimeString();
+        });
+        var chartOpts = {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { maxTicksLimit: 10, color: 'var(--text-muted)' } },
+            y: { min: 0, ticks: { color: 'var(--text-muted)' } },
+          },
+        };
+        var accent = 'rgb(56, 189, 248)';
+        var cpuCanvas = document.getElementById('chart-cpu');
+        if (cpuCanvas && data.some(function (d) { return d.cpu != null; })) {
+          chartInstances.cpu = new Chart(cpuCanvas, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{ label: 'CPU %', data: data.map(function (d) { return d.cpu; }), borderColor: accent, backgroundColor: 'rgba(56, 189, 248, 0.1)', fill: true, tension: 0.2 }],
+            },
+            options: chartOpts,
+          });
+        }
+        var memCanvas = document.getElementById('chart-mem');
+        if (memCanvas && data.some(function (d) { return d.mem != null; })) {
+          chartInstances.mem = new Chart(memCanvas, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{ label: 'Mem %', data: data.map(function (d) { return d.mem; }), borderColor: accent, backgroundColor: 'rgba(56, 189, 248, 0.1)', fill: true, tension: 0.2 }],
+            },
+            options: chartOpts,
+          });
+        }
+        var tempCanvas = document.getElementById('chart-temp');
+        if (tempCanvas && (data.some(function (d) { return d.temp_cpu != null; }) || data.some(function (d) { return d.temp_pmic != null; }) || data.some(function (d) { return d.temp_rp1 != null; }))) {
+          var datasets = [];
+          if (data.some(function (d) { return d.temp_cpu != null; })) {
+            datasets.push({ label: 'CPU', data: data.map(function (d) { return d.temp_cpu; }), borderColor: 'rgb(56, 189, 248)', fill: false, tension: 0.2 });
+          }
+          if (data.some(function (d) { return d.temp_pmic != null; })) {
+            datasets.push({ label: 'PMIC', data: data.map(function (d) { return d.temp_pmic; }), borderColor: 'rgb(252, 211, 77)', fill: false, tension: 0.2 });
+          }
+          if (data.some(function (d) { return d.temp_rp1 != null; })) {
+            datasets.push({ label: 'RP1', data: data.map(function (d) { return d.temp_rp1; }), borderColor: 'rgb(134, 239, 172)', fill: false, tension: 0.2 });
+          }
+          chartInstances.temp = new Chart(tempCanvas, {
+            type: 'line',
+            data: { labels: labels, datasets: datasets },
+            options: Object.assign({}, chartOpts, { plugins: { legend: { display: datasets.length > 1 } } }),
+          });
+        }
+      })
+      .catch(function () { destroyCharts(); });
   }
 
   function loadLogs() {
@@ -234,18 +365,23 @@
     var ref = document.getElementById('setting-refresh');
     var theme = document.getElementById('setting-theme');
     var logLines = document.getElementById('setting-log-lines');
+    var langSel = document.getElementById('setting-lang');
     if (ref) ref.value = s.refresh_interval_sec;
     if (theme) theme.value = s.theme;
     if (logLines) logLines.value = s.log_lines;
+    if (langSel) langSel.value = s.lang || 'de';
+    applyLang(s.lang || 'de');
   }
 
   function saveSettingsFromForm() {
     var ref = parseInt(document.getElementById('setting-refresh').value, 10) || 3;
     var theme = document.getElementById('setting-theme').value;
     var logLines = parseInt(document.getElementById('setting-log-lines').value, 10) || 200;
-    var s = { refresh_interval_sec: ref, theme: theme, log_lines: logLines };
+    var lang = (document.getElementById('setting-lang') && document.getElementById('setting-lang').value) || 'de';
+    var s = { refresh_interval_sec: ref, theme: theme, log_lines: logLines, lang: lang };
     saveSettingsLocal(s);
     applyTheme(theme);
+    applyLang(lang);
     applyRefreshInterval(ref);
     initSettingsPage();
   }
@@ -254,14 +390,21 @@
     if (refreshIntervalId) clearInterval(refreshIntervalId);
     var ms = Math.max(1000, (sec || 3) * 1000);
     refreshIntervalId = setInterval(tick, ms);
+    var t = i18n[getSettings().lang] || i18n.de;
     var label = document.getElementById('refresh-label');
-    if (label) label.textContent = 'Aktualisierung alle ' + sec + 's';
+    if (label) label.textContent = (t.refreshLabel || 'Aktualisierung alle') + ' ' + sec + 's';
   }
 
   function start() {
     var s = getSettings();
     applyTheme(s.theme);
+    applyLang(s.lang || 'de');
     applyRefreshInterval(s.refresh_interval_sec);
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function () {
+        applyTheme(getSettings().theme);
+      });
+    }
     tick();
 
     var port = (window.location.port && window.location.port !== '80') ? window.location.port : '9090';
@@ -295,6 +438,11 @@
     document.getElementById('logs-source').addEventListener('change', loadLogs);
     document.getElementById('logs-lines').addEventListener('change', loadLogs);
 
+    var statsRefresh = document.getElementById('stats-refresh');
+    var statsPeriod = document.getElementById('stats-period');
+    if (statsRefresh) statsRefresh.addEventListener('click', loadStats);
+    if (statsPeriod) statsPeriod.addEventListener('change', loadStats);
+
     var saveBtn = document.getElementById('setting-save');
     if (saveBtn) saveBtn.addEventListener('click', saveSettingsFromForm);
     var saveServerBtn = document.getElementById('setting-save-server');
@@ -303,10 +451,11 @@
         var ref = parseInt(document.getElementById('setting-refresh').value, 10) || 3;
         var theme = document.getElementById('setting-theme').value;
         var logLines = parseInt(document.getElementById('setting-log-lines').value, 10) || 200;
+        var lang = (document.getElementById('setting-lang') && document.getElementById('setting-lang').value) || 'de';
         fetch('api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_interval_sec: ref, log_lines: logLines, theme: theme }),
+          body: JSON.stringify({ refresh_interval_sec: ref, log_lines: logLines, theme: theme, lang: lang }),
         }).then(function (r) { return r.json(); }).then(function () {
           saveSettingsFromForm();
         }).catch(function () {});
