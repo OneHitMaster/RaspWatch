@@ -5,6 +5,8 @@
   const BYTES = ['B', 'KB', 'MB', 'GB', 'TB'];
   const DEFAULT_REFRESH_MS = 3000;
   const DEFAULT_THEME = 'dark';
+  var lastActiveAlerts = [];
+  var notificationPermissionAsked = false;
 
   function formatBytes(n) {
     if (n === undefined || n === null || isNaN(n)) return '—';
@@ -83,6 +85,10 @@
       saveLocal: 'Speichern (lokal)',
       saveServer: 'Auf Server speichern',
       settingsHint: 'Lokale Einstellungen werden im Browser gespeichert. Server-Einstellungen in',
+      cpuAlert: 'CPU über Schwellwert',
+      tempAlert: 'Temperatur über Schwellwert',
+      diskAlert: 'Speicher über Schwellwert',
+      alertTriggered: 'Schwellwert überschritten',
     },
     en: {
       navDashboard: 'Dashboard',
@@ -98,6 +104,10 @@
       saveLocal: 'Save (local)',
       saveServer: 'Save to server',
       settingsHint: 'Local settings are stored in the browser. Server settings in',
+      cpuAlert: 'CPU above threshold',
+      tempAlert: 'Temperature above threshold',
+      diskAlert: 'Disk above threshold',
+      alertTriggered: 'threshold exceeded',
     },
   };
 
@@ -221,11 +231,36 @@
     }
 
     var alertBadge = document.getElementById('alert-badge');
+    var active = data.alerts_active || [];
     if (alertBadge) {
-      var active = data.alerts_active || [];
       alertBadge.style.display = active.length ? 'inline-flex' : 'none';
       alertBadge.textContent = active.length;
     }
+    if (typeof Notification !== 'undefined' && active.length) {
+      var newAlerts = active.filter(function (k) { return lastActiveAlerts.indexOf(k) === -1; });
+      if (newAlerts.length) {
+        var show = function () {
+          var t = (i18n[getSettings().lang] || i18n.de);
+          var title = 'RaspWatch';
+          newAlerts.forEach(function (key) {
+            var body = '';
+            if (key === 'cpu') body = (t.cpuAlert || 'CPU über Schwellwert') + ': ' + (data.cpu && data.cpu.usage_percent != null ? data.cpu.usage_percent + ' %' : '');
+            else if (key === 'temp') body = (t.tempAlert || 'Temperatur über Schwellwert') + ': ' + (data.temperature && data.temperature.cpu != null ? data.temperature.cpu + ' °C' : '');
+            else if (key === 'disk') body = (t.diskAlert || 'Speicher über Schwellwert') + ': ' + (data.disk && data.disk.usage_percent != null ? data.disk.usage_percent + ' %' : '');
+            else body = key + ' ' + (t.alertTriggered || 'Schwellwert überschritten');
+            try {
+              new Notification(title, { body: body || title, tag: 'raspwatch-' + key });
+            } catch (e) {}
+          });
+        };
+        if (Notification.permission === 'granted') show();
+        else if (Notification.permission === 'default' && !notificationPermissionAsked) {
+          notificationPermissionAsked = true;
+          Notification.requestPermission().then(function (p) { if (p === 'granted') show(); });
+        }
+      }
+    }
+    lastActiveAlerts = active.slice ? active.slice() : [];
   }
 
   function updateAlertLog() {
@@ -303,6 +338,14 @@
       tick();
       startSSE();
       updateAlertLog();
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default' && !notificationPermissionAsked) {
+        fetchJson('api/settings').then(function (s) {
+          if (s.alerts_enabled) {
+            notificationPermissionAsked = true;
+            Notification.requestPermission();
+          }
+        }).catch(function () {});
+      }
     } else {
       stopSSE();
       if (!refreshIntervalId) applyRefreshInterval(getSettings().refresh_interval_sec);

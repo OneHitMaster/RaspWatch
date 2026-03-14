@@ -1,5 +1,5 @@
 """
-RaspWatch alerts: threshold checks and optional webhook.
+RaspWatch alerts: threshold checks, persistence, and optional webhook.
 """
 from __future__ import annotations
 
@@ -7,11 +7,41 @@ import json
 import time
 import urllib.request
 from collections import deque
+from pathlib import Path
 from typing import Any
 
 ALERT_LOG_MAX = 50
+_STATE_FILE = Path(__file__).resolve().parent.parent / "alerts_state.json"
 _alert_state: dict[str, bool] = {}
 _alert_log: deque[dict[str, Any]] = deque(maxlen=ALERT_LOG_MAX)
+
+
+def _load_persisted() -> None:
+    """Load state and log from file so alerts survive restarts."""
+    global _alert_state, _alert_log
+    if not _STATE_FILE.exists():
+        return
+    try:
+        with open(_STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        _alert_state = data.get("state") or {}
+        log = data.get("log") or []
+        _alert_log = deque(log[-ALERT_LOG_MAX:], maxlen=ALERT_LOG_MAX)
+    except (json.JSONDecodeError, OSError):
+        pass
+
+
+def _save_persisted() -> None:
+    """Persist current state and log to file."""
+    try:
+        with open(_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"state": _alert_state, "log": list(_alert_log)}, f, indent=0)
+    except OSError:
+        pass
+
+
+# Load on import so restarts keep alert state
+_load_persisted()
 
 
 def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> list[str]:
@@ -42,12 +72,14 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> list[str]:
             entry = {"ts": now, "type": key, "event": "alert", "message": f"{key} threshold exceeded"}
             _alert_log.append(entry)
             _alert_state[key] = True
+            _save_persisted()
             if webhook_url:
                 _post_webhook(webhook_url, entry)
         elif not is_now and was:
             entry = {"ts": now, "type": key, "event": "resolved", "message": f"{key} back to normal"}
             _alert_log.append(entry)
             _alert_state[key] = False
+            _save_persisted()
             if webhook_url:
                 _post_webhook(webhook_url, entry)
 
