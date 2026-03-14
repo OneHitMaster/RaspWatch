@@ -335,13 +335,24 @@
         var labels = data.map(function (d) {
           return new Date(d.ts * 1000).toLocaleTimeString();
         });
+        var axisColor = (getComputedStyle(document.documentElement).getPropertyValue('--text-muted') || '#8b909a').trim();
+        var gridColor = (getComputedStyle(document.documentElement).getPropertyValue('--border') || '#252a35').trim();
         var chartOpts = {
           responsive: true,
           maintainAspectRatio: true,
-          plugins: { legend: { display: false } },
+          plugins: {
+            legend: { display: false, labels: { color: axisColor } },
+          },
           scales: {
-            x: { ticks: { maxTicksLimit: 12, color: 'var(--text-muted)', maxRotation: 45 } },
-            y: { min: 0, ticks: { color: 'var(--text-muted)', maxTicksLimit: 8 } },
+            x: {
+              ticks: { maxTicksLimit: 12, color: axisColor, maxRotation: 45, font: { size: 11 } },
+              grid: { color: gridColor },
+            },
+            y: {
+              min: 0,
+              ticks: { color: axisColor, maxTicksLimit: 8, font: { size: 11 } },
+              grid: { color: gridColor },
+            },
           },
           elements: { point: { radius: 0, hitRadius: 6 } },
         };
@@ -384,7 +395,7 @@
           chartInstances.temp = new Chart(tempCanvas, {
             type: 'line',
             data: { labels: labels, datasets: datasets },
-            options: Object.assign({}, chartOpts, { plugins: { legend: { display: datasets.length > 1 } } }),
+            options: Object.assign({}, chartOpts, { plugins: { legend: { display: datasets.length > 1, labels: { color: axisColor } } } }),
           });
         }
       })
