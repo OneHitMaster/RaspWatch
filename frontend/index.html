@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RPiMonitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">◉</span>
+        <h1>RPiMonitor</h1>
+      </div>
+      <nav class="nav">
+        <a href="#dashboard" class="nav-link active" data-page="dashboard">Dashboard</a>
+        <a href="#logs" class="nav-link" data-page="logs">Logs</a>
+        <a href="#settings" class="nav-link" data-page="settings">Einstellungen</a>
+      </nav>
+      <div class="host-info">
+        <span class="hostname" id="hostname">—</span>
+        <span class="model" id="model">—</span>
+      </div>
+      <div class="header-meta">
+        <span class="refresh" id="refresh-label">—</span>
+        <span class="status-dot" id="status-dot"></span>
+      </div>
+    </header>
+
+    <!-- Dashboard -->
+    <main id="page-dashboard" class="page active">
+      <div class="grid">
+        <section class="card card-cpu">
+          <h2>CPU</h2>
+          <div class="card-body">
+            <div class="gauge-wrap">
+              <div class="gauge-value" id="cpu-value">—</div>
+              <div class="gauge-bar"><div class="gauge-fill" id="cpu-bar" style="width: 0%"></div></div>
+            </div>
+            <div class="meta">Load: <span id="load-1">—</span> <span id="load-5">—</span> <span id="load-15">—</span> · <span id="cpu-cores">—</span> Kerne</div>
+          </div>
+        </section>
+
+        <section class="card card-memory">
+          <h2>Speicher</h2>
+          <div class="card-body">
+            <div class="gauge-wrap">
+              <div class="gauge-value" id="mem-value">—</div>
+              <div class="gauge-bar"><div class="gauge-fill" id="mem-bar" style="width: 0%"></div></div>
+            </div>
+            <div class="meta"><span id="mem-used">—</span> / <span id="mem-total">—</span> MB</div>
+          </div>
+        </section>
+
+        <section class="card card-swap">
+          <h2>Swap</h2>
+          <div class="card-body">
+            <div class="gauge-wrap">
+              <div class="gauge-value" id="swap-value">—</div>
+              <div class="gauge-bar"><div class="gauge-fill" id="swap-bar" style="width: 0%"></div></div>
+            </div>
+            <div class="meta"><span id="swap-used">—</span> / <span id="swap-total">—</span> MB</div>
+          </div>
+        </section>
+
+        <section class="card card-disk">
+          <h2>Speicherplatz</h2>
+          <div class="card-body">
+            <div class="gauge-wrap">
+              <div class="gauge-value" id="disk-value">—</div>
+              <div class="gauge-bar"><div class="gauge-fill" id="disk-bar" style="width: 0%"></div></div>
+            </div>
+            <div class="meta"><span id="disk-used">—</span> / <span id="disk-total">—</span> GB</div>
+          </div>
+        </section>
+
+        <section class="card card-disk-io">
+          <h2>Disk I/O</h2>
+          <div class="card-body">
+            <div class="io-row"><span>Gelesen</span><strong id="disk-read">—</strong></div>
+            <div class="io-row"><span>Geschrieben</span><strong id="disk-write">—</strong></div>
+          </div>
+        </section>
+
+        <section class="card card-temp">
+          <h2>Temperatur</h2>
+          <div class="card-body temps">
+            <div class="temp-row"><span>CPU</span><strong id="temp-cpu">—</strong></div>
+            <div class="temp-row"><span>PMIC</span><strong id="temp-pmic">—</strong></div>
+            <div class="temp-row"><span>RP1</span><strong id="temp-rp1">—</strong></div>
+          </div>
+        </section>
+
+        <section class="card card-uptime">
+          <h2>Laufzeit</h2>
+          <div class="card-body">
+            <div class="uptime-value" id="uptime">—</div>
+          </div>
+        </section>
+
+        <section class="card card-network">
+          <h2>Netzwerk</h2>
+          <div class="card-body">
+            <div class="net-row"><span>↓ RX</span><strong id="net-rx">—</strong></div>
+            <div class="net-row"><span>↑ TX</span><strong id="net-tx">—</strong></div>
+            <div class="net-ifaces" id="net-ifaces"></div>
+          </div>
+        </section>
+
+        <section class="card card-voltage" id="card-voltage">
+          <h2>Spannung</h2>
+          <div class="card-body volts" id="voltage-body"></div>
+        </section>
+
+        <section class="card card-system">
+          <h2>System</h2>
+          <div class="card-body system-info">
+            <div class="sys-row"><span>OS</span><span id="os-release">—</span></div>
+            <div class="sys-row"><span>CPU</span><span id="cpu-model">—</span></div>
+            <div class="sys-row"><span>Kernel</span><span id="system-kernel">—</span></div>
+          </div>
+        </section>
+
+        <section class="card card-processes">
+          <h2>Top Prozesse (CPU)</h2>
+          <div class="card-body">
+            <div class="process-list" id="process-list"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Logs -->
+    <main id="page-logs" class="page">
+      <div class="logs-toolbar">
+        <select id="logs-source">
+          <option value="journal">Journal (journalctl)</option>
+          <option value="file">Log-Datei</option>
+        </select>
+        <select id="logs-lines">
+          <option value="50">50 Zeilen</option>
+          <option value="100">100 Zeilen</option>
+          <option value="200" selected>200 Zeilen</option>
+          <option value="500">500 Zeilen</option>
+        </select>
+        <button type="button" id="logs-refresh">Aktualisieren</button>
+        <label><input type="checkbox" id="logs-auto"> Auto-Refresh (5s)</label>
+      </div>
+      <div class="logs-output" id="logs-output">
+        <pre id="logs-content">Lade Logs…</pre>
+        <div class="logs-error" id="logs-error"></div>
+      </div>
+    </main>
+
+    <!-- Einstellungen -->
+    <main id="page-settings" class="page">
+      <div class="settings-form">
+        <h2>Einstellungen</h2>
+        <div class="setting-row">
+          <label for="setting-refresh">Aktualisierungsintervall (Sekunden)</label>
+          <input type="number" id="setting-refresh" min="1" max="60" value="3">
+        </div>
+        <div class="setting-row">
+          <label for="setting-theme">Design</label>
+          <select id="setting-theme">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label for="setting-log-lines">Log-Zeilen (Standard)</label>
+          <input type="number" id="setting-log-lines" min="50" max="1000" value="200">
+        </div>
+        <div class="setting-row">
+          <button type="button" id="setting-save">Speichern (lokal)</button>
+          <button type="button" id="setting-save-server">Auf Server speichern</button>
+        </div>
+        <p class="setting-hint">Lokale Einstellungen werden im Browser gespeichert. Server-Einstellungen in <code>backend/settings.json</code>.</p>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>RPiMonitor</span> · Port <span id="port">9090</span> · <span id="copyright">© 2026 TheD3vil</span>
+    </footer>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
