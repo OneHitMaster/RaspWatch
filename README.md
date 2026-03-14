@@ -6,7 +6,7 @@ Modernes Echtzeit-Monitoring für **Raspberry Pi 5** (und andere Linux-Systeme) 
 
 ## Features
 
-- **Dashboard**: CPU, RAM, Swap, Disk, Disk I/O, Temperatur (CPU/PMIC/RP1), Laufzeit, Netzwerk (inkl. pro Interface), Spannung (RPi), Top-Prozesse, **Kameras** (V4L2 + Pi-Legacy, Nutzung: Prozess, FPS, Speicher), System-Infos (OS, CPU-Modell, Kernel)
+- **Dashboard**: CPU, RAM, Swap, Disk, Disk I/O, Temperatur (CPU/PMIC/RP1), Laufzeit, Netzwerk (inkl. pro Interface), Spannung (RPi), Top-Prozesse, System-Infos (OS, CPU-Modell, Kernel)
 - **Logs**: System-Logs per journalctl oder optionale Log-Datei, Zeilenanzahl wählbar, Auto-Refresh
 - **Statistiken**: Verlaufsdiagramme (CPU, Speicher, Temperatur) über 1h/6h/24h/7d; Daten in SQLite (`backend/history.db`), 7 Tage Aufbewahrung
 - **Einstellungen**: Aktualisierungsintervall, Design (System/Dark/Light), Sprache (DE/EN), Log-Zeilen; Speicherung lokal (Browser) oder auf dem Server (`backend/settings.json`)
@@ -63,17 +63,7 @@ python main.py
 
 (Oft braucht der Prozess dafür Root oder Gruppenmitgliedschaft z. B. in `adm`.)
 
-### 5. Optional: FPS-Anzeige bei Kameras
-
-Für die Anzeige der aktuellen Bildrate (FPS) bei genutzten Kameras kann `v4l-utils` installiert werden:
-
-```bash
-sudo apt install v4l-utils
-```
-
-Ohne `v4l2-ctl` werden weiterhin Geräteliste, Nutzerprozess und Speicherverbrauch angezeigt.
-
-### 6. Optional: als Systemdienst (systemd)
+### 5. Optional: als Systemdienst (systemd)
 
 Kopieren: `sudo cp ~/RaspWatch/raspwatch.service /etc/systemd/system/`
 

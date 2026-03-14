@@ -144,7 +144,6 @@
     var net = data.network || {};
     var volt = data.voltage || {};
     var processes = data.processes || [];
-    var cameras = data.cameras || {};
 
     setText('cpu-value', (cpu.usage_percent != null ? cpu.usage_percent + ' %' : '—'));
     setBar('cpu-bar', cpu.usage_percent);
@@ -206,39 +205,6 @@
           var label = k.replace(/_/g, ' ').toUpperCase();
           return '<div class="volt-row"><span>' + label + '</span><strong>' + (v != null ? v + ' V' : '—') + '</strong></div>';
         }).join('');
-      }
-    }
-
-    var camList = document.getElementById('camera-list');
-    var cardCameras = document.getElementById('card-cameras');
-    if (camList && cardCameras) {
-      var devs = cameras.devices || [];
-      var piCam = cameras.pi_camera;
-      var parts = [];
-      devs.forEach(function (d) {
-        var line = '<div class="camera-row">';
-        line += '<span class="cam-name">' + (d.name || d.device) + '</span>';
-        line += '<span class="cam-meta">';
-        if (d.in_use) {
-          line += '<span class="cam-in-use" title="In Nutzung">' + (d.used_by_name || '') + ' <span class="cam-pid">(PID ' + (d.used_by_pid || '') + ')</span>';
-          if (d.fps != null) line += ' · <span class="cam-fps">' + d.fps + ' FPS</span>';
-          if (d.used_by_rss_mb != null) line += ' · <span class="cam-rss">' + d.used_by_rss_mb + ' MB</span>';
-          line += '</span>';
-        } else {
-          line += '<span class="cam-idle">frei</span>';
-        }
-        line += '</span></div>';
-        parts.push(line);
-      });
-      if (piCam && piCam.detected) {
-        parts.push('<div class="camera-row pi-cam"><span class="cam-name">' + (piCam.type || 'Pi Camera') + '</span><span class="cam-dev">erkannt</span></div>');
-      }
-      if (parts.length) {
-        camList.innerHTML = parts.join('');
-        cardCameras.classList.remove('empty');
-      } else {
-        camList.innerHTML = 'Keine Kameras erkannt.';
-        cardCameras.classList.remove('empty');
       }
     }
 
