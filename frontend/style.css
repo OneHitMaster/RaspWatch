@@ -261,11 +261,33 @@ body {
 .system-info .sys-row { display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.5rem; font-size: 0.85rem; }
 .system-info .sys-row span:last-child { color: var(--text-muted); word-break: break-word; }
 
-.process-list { max-height: 240px; overflow-y: auto; }
-.process-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; font-size: 0.8rem; border-bottom: 1px solid var(--border); }
+/* Scrollbereiche ohne sichtbare Scrollleiste – Inhalt bleibt per Maus/Touch scrollbar */
+.scroll-clean {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-clean::-webkit-scrollbar {
+  display: none;
+}
+
+.card-processes .card-body,
+.card-alerts .card-body {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+}
+
+.process-list {
+  max-height: 280px;
+  min-height: 180px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+.process-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; font-size: 0.85rem; border-bottom: 1px solid var(--border); }
 .process-row:last-child { border-bottom: none; }
 .proc-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.proc-pid { color: var(--text-muted); min-width: 2.5rem; }
+.proc-pid { color: var(--text-muted); min-width: 2.5rem; font-size: 0.8rem; }
 .proc-rss { color: var(--accent); min-width: 4rem; text-align: right; }
 
 .uptime-value {
@@ -411,8 +433,16 @@ body {
 .alert-rule .ar-interval { display: inline-flex; align-items: center; gap: 0.25rem; }
 .alert-rule .ar-interval input { width: 3.5rem; padding: 0.25rem 0.4rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); }
 
-.alert-log { font-size: 0.85rem; max-height: 120px; overflow-y: auto; }
-.alert-entry { padding: 0.25rem 0; border-bottom: 1px solid var(--border); }
+.card-alerts .alert-log {
+  font-size: 0.85rem;
+  max-height: 220px;
+  min-height: 160px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  flex: 1;
+}
+.alert-entry { padding: 0.35rem 0; border-bottom: 1px solid var(--border); line-height: 1.4; }
+.alert-entry:last-child { border-bottom: none; }
 .alert-entry.alert { color: var(--danger); }
 .alert-entry.resolved { color: var(--success); }
 
