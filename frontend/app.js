@@ -66,6 +66,7 @@
 
   var refreshIntervalId = null;
   var logsAutoRefreshId = null;
+  var eventSource = null;
 
   var i18n = {
     de: {
@@ -218,6 +219,30 @@
         listEl.innerHTML = '<div class="meta">Keine Daten</div>';
       }
     }
+
+    var alertBadge = document.getElementById('alert-badge');
+    if (alertBadge) {
+      var active = data.alerts_active || [];
+      alertBadge.style.display = active.length ? 'inline-flex' : 'none';
+      alertBadge.textContent = active.length;
+    }
+  }
+
+  function updateAlertLog() {
+    fetchJson('api/alerts').then(function (res) {
+      var logEl = document.getElementById('alert-log');
+      if (!logEl) return;
+      var log = res.log || [];
+      if (log.length === 0) {
+        logEl.innerHTML = 'Keine Alerts.';
+        return;
+      }
+      logEl.innerHTML = log.slice().reverse().slice(0, 10).map(function (e) {
+        var t = new Date(e.ts * 1000).toLocaleTimeString();
+        var cls = e.event === 'alert' ? 'alert-entry alert' : 'alert-entry resolved';
+        return '<div class="' + cls + '">' + t + ' – ' + (e.message || e.type) + '</div>';
+      }).join('');
+    }).catch(function () {});
   }
 
   function fetchJson(url) {
@@ -237,32 +262,33 @@
       .catch(function () { setLive(false); });
   }
 
-  var sse = null;
-  var sseLive = false;
+  function startSSE() {
+    if (eventSource || !window.EventSource) return;
+    eventSource = new EventSource('api/stream');
+    eventSource.onmessage = function (e) {
+      try {
+        var data = JSON.parse(e.data);
+        renderDynamic(data);
+        setLive(true);
+        if (refreshIntervalId) {
+          clearInterval(refreshIntervalId);
+          refreshIntervalId = null;
+        }
+      } catch (err) {}
+    };
+    eventSource.onerror = function () {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (!refreshIntervalId) applyRefreshInterval(getSettings().refresh_interval_sec);
+    };
+  }
 
-  function startSse() {
-    try {
-      if (!window.EventSource) return;
-      if (sse) return;
-      sse = new EventSource('api/stream');
-      sse.onmessage = function (evt) {
-        try {
-          var data = JSON.parse(evt.data);
-          if (data) {
-            renderDynamic(data);
-            setLive(true);
-            sseLive = true;
-          }
-        } catch (e) {}
-      };
-      sse.onerror = function () {
-        sseLive = false;
-        try { sse.close(); } catch (e) {}
-        sse = null;
-      };
-    } catch (e) {
-      sse = null;
-      sseLive = false;
+  function stopSSE() {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
     }
   }
 
@@ -273,7 +299,14 @@
     var link = document.querySelector('.nav-link[data-page="' + pageId + '"]');
     if (page) page.classList.add('active');
     if (link) link.classList.add('active');
-    if (pageId === 'dashboard') tick();
+    if (pageId === 'dashboard') {
+      tick();
+      startSSE();
+      updateAlertLog();
+    } else {
+      stopSSE();
+      if (!refreshIntervalId) applyRefreshInterval(getSettings().refresh_interval_sec);
+    }
     if (pageId === 'stats') loadStats();
     if (pageId === 'logs') loadLogs();
     if (pageId === 'settings') initSettingsPage();
@@ -400,6 +433,18 @@
     if (logLines) logLines.value = s.log_lines;
     if (langSel) langSel.value = s.lang || 'de';
     applyLang(s.lang || 'de');
+    fetchJson('api/settings').then(function (server) {
+      var cb = document.getElementById('setting-alerts-enabled');
+      var cpuW = document.getElementById('setting-cpu-warn');
+      var tempW = document.getElementById('setting-temp-warn');
+      var diskW = document.getElementById('setting-disk-warn');
+      var webhook = document.getElementById('setting-webhook');
+      if (cb) cb.checked = !!server.alerts_enabled;
+      if (cpuW) cpuW.value = server.cpu_warn != null ? server.cpu_warn : 90;
+      if (tempW) tempW.value = server.temp_warn != null ? server.temp_warn : 80;
+      if (diskW) diskW.value = server.disk_warn != null ? server.disk_warn : 90;
+      if (webhook) webhook.value = server.webhook_url || '';
+    }).catch(function () {});
   }
 
   function saveSettingsFromForm() {
@@ -418,10 +463,7 @@
   function applyRefreshInterval(sec) {
     if (refreshIntervalId) clearInterval(refreshIntervalId);
     var ms = Math.max(1000, (sec || 3) * 1000);
-    refreshIntervalId = setInterval(function () {
-      // If SSE is live, avoid extra polling.
-      if (!sseLive) tick();
-    }, ms);
+    refreshIntervalId = setInterval(tick, ms);
     var t = i18n[getSettings().lang] || i18n.de;
     var label = document.getElementById('refresh-label');
     if (label) label.textContent = (t.refreshLabel || 'Aktualisierung alle') + ' ' + sec + 's';
@@ -437,7 +479,6 @@
         applyTheme(getSettings().theme);
       });
     }
-    startSse();
     tick();
 
     var port = (window.location.port && window.location.port !== '80') ? window.location.port : '9090';
@@ -475,6 +516,11 @@
     var statsPeriod = document.getElementById('stats-period');
     if (statsRefresh) statsRefresh.addEventListener('click', loadStats);
     if (statsPeriod) statsPeriod.addEventListener('change', loadStats);
+    var periodForExport = function () { return document.getElementById('stats-period') && document.getElementById('stats-period').value || '24h'; };
+    var csvBtn = document.getElementById('stats-export-csv');
+    var jsonBtn = document.getElementById('stats-export-json');
+    if (csvBtn) csvBtn.addEventListener('click', function () { window.location.href = 'api/export/history.csv?period=' + encodeURIComponent(periodForExport()); });
+    if (jsonBtn) jsonBtn.addEventListener('click', function () { window.location.href = 'api/export/history.json?period=' + encodeURIComponent(periodForExport()); });
 
     var saveBtn = document.getElementById('setting-save');
     if (saveBtn) saveBtn.addEventListener('click', saveSettingsFromForm);
@@ -485,10 +531,18 @@
         var theme = document.getElementById('setting-theme').value;
         var logLines = parseInt(document.getElementById('setting-log-lines').value, 10) || 200;
         var lang = (document.getElementById('setting-lang') && document.getElementById('setting-lang').value) || 'de';
+        var alertsOn = document.getElementById('setting-alerts-enabled') && document.getElementById('setting-alerts-enabled').checked;
+        var cpuWarn = parseInt(document.getElementById('setting-cpu-warn') && document.getElementById('setting-cpu-warn').value, 10) || 90;
+        var tempWarn = parseInt(document.getElementById('setting-temp-warn') && document.getElementById('setting-temp-warn').value, 10) || 80;
+        var diskWarn = parseInt(document.getElementById('setting-disk-warn') && document.getElementById('setting-disk-warn').value, 10) || 90;
+        var webhookUrl = (document.getElementById('setting-webhook') && document.getElementById('setting-webhook').value) || '';
         fetch('api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_interval_sec: ref, log_lines: logLines, theme: theme, lang: lang }),
+          body: JSON.stringify({
+            refresh_interval_sec: ref, log_lines: logLines, theme: theme, lang: lang,
+            alerts_enabled: alertsOn, cpu_warn: cpuWarn, temp_warn: tempWarn, disk_warn: diskWarn, webhook_url: webhookUrl,
+          }),
         }).then(function (r) { return r.json(); }).then(function () {
           saveSettingsFromForm();
         }).catch(function () {});

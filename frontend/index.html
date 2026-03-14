@@ -29,6 +29,7 @@
       </div>
       <div class="header-meta">
         <span class="refresh" id="refresh-label">—</span>
+        <span class="alert-badge" id="alert-badge" title="Aktive Alerts">!</span>
         <span class="status-dot" id="status-dot"></span>
       </div>
     </header>
@@ -133,6 +134,13 @@
             <div class="process-list" id="process-list"></div>
           </div>
         </section>
+
+        <section class="card card-alerts" id="card-alerts">
+          <h2>Alerts</h2>
+          <div class="card-body">
+            <div class="alert-log" id="alert-log">Keine Alerts.</div>
+          </div>
+        </section>
       </div>
     </main>
 
@@ -146,6 +154,8 @@
           <option value="7d" data-i18n="last7d">Letzte 7 Tage</option>
         </select>
         <button type="button" id="stats-refresh" data-i18n="update">Aktualisieren</button>
+        <button type="button" id="stats-export-csv">CSV</button>
+        <button type="button" id="stats-export-json">JSON</button>
       </div>
       <div class="charts-grid">
         <div class="chart-card">
@@ -211,6 +221,26 @@
             <option value="de">Deutsch</option>
             <option value="en">English</option>
           </select>
+        </div>
+        <h3 class="settings-sub">Alerts</h3>
+        <div class="setting-row">
+          <label><input type="checkbox" id="setting-alerts-enabled"> Alerts aktivieren</label>
+        </div>
+        <div class="setting-row">
+          <label for="setting-cpu-warn">CPU-Warnung (%)</label>
+          <input type="number" id="setting-cpu-warn" min="1" max="100" value="90">
+        </div>
+        <div class="setting-row">
+          <label for="setting-temp-warn">Temperatur-Warnung (°C)</label>
+          <input type="number" id="setting-temp-warn" min="0" max="120" value="80">
+        </div>
+        <div class="setting-row">
+          <label for="setting-disk-warn">Speicher-Warnung (%)</label>
+          <input type="number" id="setting-disk-warn" min="1" max="100" value="90">
+        </div>
+        <div class="setting-row">
+          <label for="setting-webhook">Webhook-URL (optional)</label>
+          <input type="url" id="setting-webhook" placeholder="https://...">
         </div>
         <div class="setting-row">
           <button type="button" id="setting-save" data-i18n="saveLocal">Speichern (lokal)</button>

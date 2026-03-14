@@ -10,5 +10,17 @@ ExecStart=/home/pi/RaspWatch/backend/venv/bin/python main.py
 Restart=on-failure
 Environment=PORT=9090
 
+# Logging to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=raspwatch
+
+# Hardening (optional; ReadWritePaths needed for history.db and settings.json)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/pi/RaspWatch/backend
+ProtectHome=read-only
+
 [Install]
 WantedBy=multi-user.target

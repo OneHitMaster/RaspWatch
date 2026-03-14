@@ -125,6 +125,19 @@ body {
 .status-dot.error {
   background: var(--danger);
 }
+.alert-badge {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: var(--bg);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
 
 /* Pages */
 .page {
@@ -375,6 +388,14 @@ body {
 .setting-row button:hover { background: var(--border); }
 .setting-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: 1rem; }
 .setting-hint code { background: var(--border); padding: 0.1rem 0.3rem; border-radius: 4px; }
+.settings-sub { font-size: 0.95rem; margin: 1rem 0 0.5rem; color: var(--text-muted); }
+.setting-row input[type="url"] { width: 100%; max-width: 320px; padding: 0.5rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); }
+.setting-row input[type="checkbox"] { margin-right: 0.5rem; }
+
+.alert-log { font-size: 0.85rem; max-height: 120px; overflow-y: auto; }
+.alert-entry { padding: 0.25rem 0; border-bottom: 1px solid var(--border); }
+.alert-entry.alert { color: var(--danger); }
+.alert-entry.resolved { color: var(--success); }
 
 /* Light theme */
 [data-theme="light"] {
@@ -404,14 +425,48 @@ body {
   color: var(--text-muted);
 }
 
+/* Mobile / responsive */
 @media (max-width: 640px) {
+  .app { padding: 0.75rem; }
   .header {
     flex-direction: column;
     align-items: flex-start;
+    gap: 0.75rem;
   }
-  .nav { order: 3; width: 100%; }
-
-  .grid {
-    grid-template-columns: 1fr;
+  .header-meta { flex-wrap: wrap; }
+  .nav {
+    order: 3;
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
   }
+  .nav-link {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.6rem 0.75rem;
+    display: inline-flex;
+    align-items: center;
+  }
+  .host-info { font-size: 0.8rem; }
+  .grid { grid-template-columns: 1fr; gap: 0.75rem; }
+  .card { padding: 1rem; }
+  .gauge-value { font-size: 1.25rem; }
+  .logs-toolbar { flex-wrap: wrap; }
+  .logs-toolbar select, .logs-toolbar button {
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+  }
+  #logs-content { max-height: 60vh; font-size: 0.75rem; }
+  .stats-toolbar { flex-wrap: wrap; }
+  .stats-toolbar select, .stats-toolbar button { min-height: 44px; }
+  .chart-card { padding: 0.75rem; }
+  .chart-card canvas { max-height: 180px; }
+  .settings-form { max-width: 100%; }
+  .setting-row input[type="number"], .setting-row select { max-width: 100%; }
+  .setting-row input[type="url"] { max-width: 100%; }
+  .setting-row button { min-height: 44px; padding: 0.6rem 1rem; }
+  .process-row { padding: 0.35rem 0; }
+  .footer { padding-top: 1rem; font-size: 0.7rem; }
+  button, .nav-link, select, input { -webkit-tap-highlight-color: transparent; }
 }

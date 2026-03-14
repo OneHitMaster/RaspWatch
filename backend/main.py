@@ -5,6 +5,8 @@ Copyright 2026 TheD3vil
 """
 from __future__ import annotations
 
+import asyncio
+import copy
 import json
 import os
 import threading
@@ -16,52 +18,74 @@ from fastapi import Body, FastAPI, Query
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from monitor.alerts import check_alerts, get_alert_status
 from monitor.collectors import collect_dynamic, collect_static
 from monitor.history import get_history, init_db, write_snapshot
 from monitor.logs_reader import get_logs
 from monitor.settings_manager import load_settings, save_settings
 
+SAMPLER_INTERVAL = 3
 HISTORY_INTERVAL = 30
-_history_stop = threading.Event()
+_dynamic_cache: dict | None = None
+_dynamic_cache_ts: float = 0
 _cache_lock = threading.Lock()
-_dynamic_cache: dict = {}
-_dynamic_cache_ts: float = 0.0
-_dynamic_cache_error: str | None = None
+_history_stop = threading.Event()
+_sampler_stop = threading.Event()
 
 
-def _history_worker() -> None:
+def get_cached_dynamic() -> dict | None:
+    """Return a copy of the last sampled dynamic data, or None if not yet sampled."""
+    with _cache_lock:
+        if _dynamic_cache is None:
+            return None
+        out = copy.deepcopy(_dynamic_cache)
+        out["_stale"] = (time.time() - _dynamic_cache_ts) > (SAMPLER_INTERVAL * 3)
+    out["alerts_active"] = get_alert_status()["active"]
+    return out
+
+
+def _sampler_loop() -> None:
+    global _dynamic_cache, _dynamic_cache_ts
     init_db()
-    global _dynamic_cache, _dynamic_cache_ts, _dynamic_cache_error
-    # Fill cache immediately
-    try:
-        data = collect_dynamic()
-        with _cache_lock:
-            _dynamic_cache = data
-            _dynamic_cache_ts = time.time()
-            _dynamic_cache_error = None
-        write_snapshot(data)
-    except Exception as e:
-        with _cache_lock:
-            _dynamic_cache_error = str(e)
-
-    while not _history_stop.wait(timeout=HISTORY_INTERVAL):
+    tick = 0
+    while not _sampler_stop.wait(timeout=SAMPLER_INTERVAL):
         try:
             data = collect_dynamic()
             with _cache_lock:
                 _dynamic_cache = data
                 _dynamic_cache_ts = time.time()
-                _dynamic_cache_error = None
-            write_snapshot(data)
-        except Exception as e:
-            with _cache_lock:
-                _dynamic_cache_error = str(e)
+            try:
+                check_alerts(data, load_settings())
+            except Exception:
+                pass
+            tick += 1
+            if tick >= (HISTORY_INTERVAL // SAMPLER_INTERVAL):
+                tick = 0
+                try:
+                    write_snapshot(data)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    t = threading.Thread(target=_history_worker, daemon=True)
+    # First sample to fill cache immediately
+    try:
+        data = collect_dynamic()
+        with _cache_lock:
+            global _dynamic_cache, _dynamic_cache_ts
+            _dynamic_cache = data
+            _dynamic_cache_ts = time.time()
+        write_snapshot(data)
+        check_alerts(data, load_settings())
+    except Exception:
+        pass
+    t = threading.Thread(target=_sampler_loop, daemon=True)
     t.start()
     yield
+    _sampler_stop.set()
     _history_stop.set()
 
 
@@ -84,6 +108,8 @@ async def api_info_root():
         "dynamic": "/dynamic.json",
         "static": "/static.json",
         "logs": "/api/logs",
+        "stream": "/api/stream",
+        "alerts": "/api/alerts",
         "history": "/api/history",
         "settings": "/api/settings",
         "copyright": "© 2026 TheD3vil",
@@ -92,21 +118,11 @@ async def api_info_root():
 
 @app.get("/dynamic.json")
 async def dynamic_json():
-    """Live metrics (like XavierBerger RPi-Monitor)."""
-    global _dynamic_cache, _dynamic_cache_ts, _dynamic_cache_error
-    with _cache_lock:
-        if _dynamic_cache:
-            return {
-                **_dynamic_cache,
-                "_cache_ts": _dynamic_cache_ts,
-                "_cache_error": _dynamic_cache_error,
-            }
-    data = collect_dynamic()
-    with _cache_lock:
-        _dynamic_cache = data
-        _dynamic_cache_ts = time.time()
-        _dynamic_cache_error = None
-    return {**data, "_cache_ts": _dynamic_cache_ts, "_cache_error": _dynamic_cache_error}
+    """Live metrics (cached; like XavierBerger RPi-Monitor)."""
+    out = get_cached_dynamic()
+    if out is not None:
+        return out
+    return collect_dynamic()
 
 
 @app.get("/static.json")
@@ -117,8 +133,31 @@ async def static_json():
 
 @app.get("/api/status")
 async def api_status():
-    """REST alias for dynamic data."""
-    return await dynamic_json()
+    """REST alias for dynamic data (cached)."""
+    out = get_cached_dynamic()
+    if out is not None:
+        return out
+    return collect_dynamic()
+
+
+async def _sse_generator():
+    while True:
+        out = get_cached_dynamic()
+        if out is not None:
+            payload = copy.deepcopy(out)
+            payload.pop("_stale", None)
+            yield f"data: {json.dumps(payload)}\n\n"
+        await asyncio.sleep(SAMPLER_INTERVAL)
+
+
+@app.get("/api/stream")
+async def api_stream():
+    """SSE stream of cached dynamic data (live updates without polling)."""
+    return StreamingResponse(
+        _sse_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/info")
@@ -142,26 +181,41 @@ async def api_history(period: str = Query("1h", description="1h, 6h, 24h, 7d")):
     return {"data": get_history(period=period)}
 
 
-@app.get("/api/stream")
-async def api_stream():
-    """Server-Sent Events stream of live metrics."""
+@app.get("/api/export/history.csv")
+async def api_export_history_csv(period: str = Query("24h", description="1h, 6h, 24h, 7d")):
+    """Export history as CSV download."""
+    rows = get_history(period=period)
+    lines = ["ts,datetime,cpu,mem,swap,disk,temp_cpu,temp_pmic,temp_rp1"]
+    for r in rows:
+        dt = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r["ts"])) if r.get("ts") else ""
+        lines.append(
+            f"{r.get('ts', '')},{dt},{r.get('cpu', '')},{r.get('mem', '')},{r.get('swap', '')},"
+            f"{r.get('disk', '')},{r.get('temp_cpu', '')},{r.get('temp_pmic', '')},{r.get('temp_rp1', '')}"
+        )
+    body = "\n".join(lines).encode("utf-8")
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=raspwatch_history.csv"},
+    )
 
-    def gen():
-        last_sent = 0.0
-        while True:
-            with _cache_lock:
-                ts = _dynamic_cache_ts
-                payload = (
-                    {**_dynamic_cache, "_cache_ts": ts, "_cache_error": _dynamic_cache_error}
-                    if _dynamic_cache
-                    else None
-                )
-            if payload and ts != last_sent:
-                last_sent = ts
-                yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
-            time.sleep(1)
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+@app.get("/api/export/history.json")
+async def api_export_history_json(period: str = Query("24h", description="1h, 6h, 24h, 7d")):
+    """Export history as JSON download."""
+    data = get_history(period=period)
+    body = json.dumps({"data": data}, indent=2).encode("utf-8")
+    return Response(
+        content=body,
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=raspwatch_history.json"},
+    )
+
+
+@app.get("/api/alerts")
+async def api_alerts():
+    """Active alerts and recent alert log."""
+    return get_alert_status()
 
 
 @app.get("/api/settings")

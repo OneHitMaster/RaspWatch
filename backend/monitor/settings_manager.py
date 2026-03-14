@@ -18,6 +18,11 @@ DEFAULTS = {
     "log_file_path": "",
     "theme": "dark",
     "copyright": "© 2026 TheD3vil",
+    "alerts_enabled": False,
+    "cpu_warn": 90,
+    "temp_warn": 80,
+    "disk_warn": 90,
+    "webhook_url": "",
 }
 
 
@@ -46,7 +51,11 @@ def save_settings(data: dict[str, Any]) -> dict[str, Any]:
             current[k] = v
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump({k: current[k] for k in allowed if k != "copyright"}, f, indent=2)
+            json.dump(
+                {k: current[k] for k in allowed if k not in ("copyright",)},
+                f,
+                indent=2,
+            )
     except OSError:
         pass
     return current
