@@ -93,6 +93,9 @@
       memAlert: 'RAM über Schwellwert',
       alertTriggered: 'Schwellwert überschritten',
       ackAlerts: 'Alle quitieren',
+      ackOne: 'Quitieren',
+      chip_cpu_high: 'CPU über', chip_cpu_low: 'CPU unter', chip_temp_high: 'Temp über', chip_temp_low: 'Temp unter',
+      chip_disk_high: 'Speicher über', chip_mem_high: 'RAM über',
     },
     en: {
       navDashboard: 'Dashboard',
@@ -116,6 +119,9 @@
       memAlert: 'RAM above threshold',
       alertTriggered: 'threshold exceeded',
       ackAlerts: 'Acknowledge all',
+      ackOne: 'Ack',
+      chip_cpu_high: 'CPU high', chip_cpu_low: 'CPU low', chip_temp_high: 'Temp high', chip_temp_low: 'Temp low',
+      chip_disk_high: 'Disk high', chip_mem_high: 'RAM high',
     },
   };
 
@@ -247,6 +253,21 @@
     }
     var ackBtn = document.getElementById('alerts-ack-btn');
     if (ackBtn) ackBtn.style.display = active.length ? 'inline-flex' : 'none';
+    var chipsRow = document.getElementById('alerts-active-row');
+    if (chipsRow) {
+      var t = (i18n[getSettings().lang] || i18n.de);
+      var ackOne = t.ackOne || 'Quitieren';
+      if (active.length === 0) {
+        chipsRow.innerHTML = '';
+        chipsRow.style.display = 'none';
+      } else {
+        chipsRow.style.display = 'flex';
+        chipsRow.innerHTML = active.map(function (key) {
+          var label = t['chip_' + key] || key;
+          return '<span class="alert-chip"><span class="alert-chip-label">' + label + '</span><button type="button" class="btn-ack-one" data-key="' + key + '">' + ackOne + '</button></span>';
+        }).join('');
+      }
+    }
     var notifyNow = data.alerts_notify_now || [];
     var playSound = !!data.alerts_sound;
     if (notifyNow.length && typeof Notification !== 'undefined') {
@@ -644,6 +665,20 @@ try {
     if (csvBtn) csvBtn.addEventListener('click', function () { window.location.href = 'api/export/history.csv?period=' + encodeURIComponent(periodForExport()); });
     if (jsonBtn) jsonBtn.addEventListener('click', function () { window.location.href = 'api/export/history.json?period=' + encodeURIComponent(periodForExport()); });
 
+    var alertsCard = document.getElementById('card-alerts');
+    if (alertsCard) {
+      alertsCard.addEventListener('click', function (e) {
+        var btn = e.target.closest('.btn-ack-one');
+        if (btn && btn.dataset.key) {
+          e.preventDefault();
+          fetch('api/alerts/ack', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keys: [btn.dataset.key] }),
+          }).then(function () { tick(); });
+        }
+      });
+    }
     var alertsAckBtn = document.getElementById('alerts-ack-btn');
     if (alertsAckBtn) {
       alertsAckBtn.addEventListener('click', function () {
