@@ -237,6 +237,35 @@
       .catch(function () { setLive(false); });
   }
 
+  var sse = null;
+  var sseLive = false;
+
+  function startSse() {
+    try {
+      if (!window.EventSource) return;
+      if (sse) return;
+      sse = new EventSource('api/stream');
+      sse.onmessage = function (evt) {
+        try {
+          var data = JSON.parse(evt.data);
+          if (data) {
+            renderDynamic(data);
+            setLive(true);
+            sseLive = true;
+          }
+        } catch (e) {}
+      };
+      sse.onerror = function () {
+        sseLive = false;
+        try { sse.close(); } catch (e) {}
+        sse = null;
+      };
+    } catch (e) {
+      sse = null;
+      sseLive = false;
+    }
+  }
+
   function showPage(pageId) {
     document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
     document.querySelectorAll('.nav-link').forEach(function (a) { a.classList.remove('active'); });
@@ -389,7 +418,10 @@
   function applyRefreshInterval(sec) {
     if (refreshIntervalId) clearInterval(refreshIntervalId);
     var ms = Math.max(1000, (sec || 3) * 1000);
-    refreshIntervalId = setInterval(tick, ms);
+    refreshIntervalId = setInterval(function () {
+      // If SSE is live, avoid extra polling.
+      if (!sseLive) tick();
+    }, ms);
     var t = i18n[getSettings().lang] || i18n.de;
     var label = document.getElementById('refresh-label');
     if (label) label.textContent = (t.refreshLabel || 'Aktualisierung alle') + ' ' + sec + 's';
@@ -405,6 +437,7 @@
         applyTheme(getSettings().theme);
       });
     }
+    startSse();
     tick();
 
     var port = (window.location.port && window.location.port !== '80') ? window.location.port : '9090';

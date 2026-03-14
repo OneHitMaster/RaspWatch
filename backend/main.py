@@ -5,6 +5,7 @@ Copyright 2026 TheD3vil
 """
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -12,6 +13,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Body, FastAPI, Query
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from monitor.collectors import collect_dynamic, collect_static
@@ -21,19 +23,38 @@ from monitor.settings_manager import load_settings, save_settings
 
 HISTORY_INTERVAL = 30
 _history_stop = threading.Event()
+_cache_lock = threading.Lock()
+_dynamic_cache: dict = {}
+_dynamic_cache_ts: float = 0.0
+_dynamic_cache_error: str | None = None
 
 
 def _history_worker() -> None:
     init_db()
+    global _dynamic_cache, _dynamic_cache_ts, _dynamic_cache_error
+    # Fill cache immediately
     try:
-        write_snapshot(collect_dynamic())
-    except Exception:
-        pass
+        data = collect_dynamic()
+        with _cache_lock:
+            _dynamic_cache = data
+            _dynamic_cache_ts = time.time()
+            _dynamic_cache_error = None
+        write_snapshot(data)
+    except Exception as e:
+        with _cache_lock:
+            _dynamic_cache_error = str(e)
+
     while not _history_stop.wait(timeout=HISTORY_INTERVAL):
         try:
-            write_snapshot(collect_dynamic())
-        except Exception:
-            pass
+            data = collect_dynamic()
+            with _cache_lock:
+                _dynamic_cache = data
+                _dynamic_cache_ts = time.time()
+                _dynamic_cache_error = None
+            write_snapshot(data)
+        except Exception as e:
+            with _cache_lock:
+                _dynamic_cache_error = str(e)
 
 
 @asynccontextmanager
@@ -72,7 +93,20 @@ async def api_info_root():
 @app.get("/dynamic.json")
 async def dynamic_json():
     """Live metrics (like XavierBerger RPi-Monitor)."""
-    return collect_dynamic()
+    global _dynamic_cache, _dynamic_cache_ts, _dynamic_cache_error
+    with _cache_lock:
+        if _dynamic_cache:
+            return {
+                **_dynamic_cache,
+                "_cache_ts": _dynamic_cache_ts,
+                "_cache_error": _dynamic_cache_error,
+            }
+    data = collect_dynamic()
+    with _cache_lock:
+        _dynamic_cache = data
+        _dynamic_cache_ts = time.time()
+        _dynamic_cache_error = None
+    return {**data, "_cache_ts": _dynamic_cache_ts, "_cache_error": _dynamic_cache_error}
 
 
 @app.get("/static.json")
@@ -84,7 +118,7 @@ async def static_json():
 @app.get("/api/status")
 async def api_status():
     """REST alias for dynamic data."""
-    return collect_dynamic()
+    return await dynamic_json()
 
 
 @app.get("/api/info")
@@ -106,6 +140,28 @@ async def api_logs(
 async def api_history(period: str = Query("1h", description="1h, 6h, 24h, 7d")):
     """Time-series metrics for charts."""
     return {"data": get_history(period=period)}
+
+
+@app.get("/api/stream")
+async def api_stream():
+    """Server-Sent Events stream of live metrics."""
+
+    def gen():
+        last_sent = 0.0
+        while True:
+            with _cache_lock:
+                ts = _dynamic_cache_ts
+                payload = (
+                    {**_dynamic_cache, "_cache_ts": ts, "_cache_error": _dynamic_cache_error}
+                    if _dynamic_cache
+                    else None
+                )
+            if payload and ts != last_sent:
+                last_sent = ts
+                yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+            time.sleep(1)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.get("/api/settings")
