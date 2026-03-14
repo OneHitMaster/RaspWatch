@@ -92,6 +92,7 @@
       diskAlert: 'Speicher über Schwellwert',
       memAlert: 'RAM über Schwellwert',
       alertTriggered: 'Schwellwert überschritten',
+      ackAlerts: 'Alle quitieren',
     },
     en: {
       navDashboard: 'Dashboard',
@@ -114,6 +115,7 @@
       diskAlert: 'Disk above threshold',
       memAlert: 'RAM above threshold',
       alertTriggered: 'threshold exceeded',
+      ackAlerts: 'Acknowledge all',
     },
   };
 
@@ -237,11 +239,14 @@
     }
 
     var alertBadge = document.getElementById('alert-badge');
+    var unack = data.alerts_active_unacknowledged || data.alerts_active || [];
     var active = data.alerts_active || [];
     if (alertBadge) {
-      alertBadge.style.display = active.length ? 'inline-flex' : 'none';
-      alertBadge.textContent = active.length;
+      alertBadge.style.display = unack.length ? 'inline-flex' : 'none';
+      alertBadge.textContent = unack.length;
     }
+    var ackBtn = document.getElementById('alerts-ack-btn');
+    if (ackBtn) ackBtn.style.display = active.length ? 'inline-flex' : 'none';
     var notifyNow = data.alerts_notify_now || [];
     var playSound = !!data.alerts_sound;
     if (notifyNow.length && typeof Notification !== 'undefined') {
@@ -638,6 +643,14 @@ try {
     var jsonBtn = document.getElementById('stats-export-json');
     if (csvBtn) csvBtn.addEventListener('click', function () { window.location.href = 'api/export/history.csv?period=' + encodeURIComponent(periodForExport()); });
     if (jsonBtn) jsonBtn.addEventListener('click', function () { window.location.href = 'api/export/history.json?period=' + encodeURIComponent(periodForExport()); });
+
+    var alertsAckBtn = document.getElementById('alerts-ack-btn');
+    if (alertsAckBtn) {
+      alertsAckBtn.addEventListener('click', function () {
+        fetch('api/alerts/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+          .then(function () { tick(); });
+      });
+    }
 
     var saveBtn = document.getElementById('setting-save');
     if (saveBtn) saveBtn.addEventListener('click', saveSettingsFromForm);

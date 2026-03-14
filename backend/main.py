@@ -18,7 +18,7 @@ from fastapi import Body, FastAPI, Query
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from monitor.alerts import check_alerts, get_alert_status, get_and_clear_notify_now, set_last_notify_now
+from monitor.alerts import acknowledge_alerts, check_alerts, get_alert_status, get_and_clear_notify_now, set_last_notify_now
 from monitor.collectors import collect_dynamic, collect_static
 from monitor.history import get_history, init_db, write_snapshot
 from monitor.logs_reader import get_logs
@@ -39,6 +39,7 @@ def _attach_alert_fields(out: dict) -> None:
     """Add alert-related fields to a dynamic payload so the frontend always gets them."""
     status = get_alert_status()
     out["alerts_active"] = status["active"]
+    out["alerts_active_unacknowledged"] = status.get("active_unacknowledged", status["active"])
     out["alerts_notify_now"] = get_and_clear_notify_now()
     out["alerts_sound"] = load_settings().get("alerts_sound", True)
     out["alerts_log"] = status["log"]
@@ -257,6 +258,14 @@ async def api_export_history_json(period: str = Query("24h", description="1h, 6h
 async def api_alerts():
     """Active alerts and recent alert log."""
     return get_alert_status()
+
+
+@app.post("/api/alerts/ack")
+async def api_alerts_ack(data: dict = Body(default={})):
+    """Alerts quitieren: body {} = alle aktiven; body {"keys": ["temp_high", ...]} = nur diese."""
+    keys = data.get("keys") if isinstance(data.get("keys"), list) else None
+    acknowledge_alerts(keys)
+    return {"ok": True, "acknowledged": list(get_alert_status().get("active", [])) if not keys else keys}
 
 
 @app.get("/api/settings")

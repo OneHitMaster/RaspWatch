@@ -24,6 +24,7 @@ ALERT_KEYS = (
 _alert_state: dict[str, bool] = {}
 _alert_last_notify_ts: dict[str, float] = {}
 _alert_log: deque[dict[str, Any]] = deque(maxlen=ALERT_LOG_MAX)
+_acknowledged: set[str] = set()  # Quittierte Alerts – keine Wiederholungs-Meldungen mehr bis zur Auflösung
 
 
 def _load_persisted() -> None:
@@ -198,7 +199,8 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
         label = _LABELS.get(key, key)
 
         if is_now and not was:
-            # Just became active
+            # Just became active (evtl. war vorher quittiert – neu auslösen)
+            _acknowledged.discard(key)
             entry = {"ts": now, "type": key, "event": "alert", "message": label}
             _alert_log.append(entry)
             _alert_state[key] = True
@@ -208,8 +210,8 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
             if webhook_url:
                 _post_webhook(webhook_url, entry)
         elif is_now and was:
-            # Still active: repeat notification if interval elapsed
-            if interval_sec > 0 and (now - last_ts) >= interval_sec:
+            # Still active: repeat only if not acknowledged
+            if key not in _acknowledged and interval_sec > 0 and (now - last_ts) >= interval_sec:
                 _alert_last_notify_ts[key] = now
                 _save_persisted()
                 notify_now.append(key)
@@ -219,6 +221,7 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
                     _post_webhook(webhook_url, repeat_entry)
         elif not is_now and was:
             # Resolved
+            _acknowledged.discard(key)
             entry = {"ts": now, "type": key, "event": "resolved", "message": f"{label} – wieder normal"}
             _alert_log.append(entry)
             _alert_state[key] = False
@@ -240,11 +243,23 @@ def _post_webhook(url: str, payload: dict[str, Any]) -> None:
 
 
 def get_alert_status() -> dict[str, Any]:
-    """Return active alerts and recent log. notify_now is consumed via get_and_clear_notify_now()."""
+    """Return active alerts, unacknowledged (for badge), and recent log."""
+    active = [k for k in ALERT_KEYS if _alert_state.get(k)]
+    unack = [k for k in active if k not in _acknowledged]
     return {
-        "active": [k for k in ALERT_KEYS if _alert_state.get(k)],
+        "active": active,
+        "active_unacknowledged": unack,
         "log": list(_alert_log),
     }
+
+
+def acknowledge_alerts(keys: list[str] | None = None) -> None:
+    """Quitieren: keys = None = alle aktuell aktiven; sonst nur die genannten."""
+    global _acknowledged
+    if not keys:
+        _acknowledged = {k for k in ALERT_KEYS if _alert_state.get(k)}
+    else:
+        _acknowledged |= {k for k in keys if k in ALERT_KEYS}
 
 
 # Notify_now: set by check_alerts, consumed once per response so each client gets one pop per interval
