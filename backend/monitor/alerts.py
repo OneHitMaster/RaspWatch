@@ -213,8 +213,10 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
                 _alert_last_notify_ts[key] = now
                 _save_persisted()
                 notify_now.append(key)
+                repeat_entry = {"ts": now, "type": key, "event": "repeat", "message": f"{label} (Wiederholung)"}
+                _alert_log.append(repeat_entry)
                 if webhook_url:
-                    _post_webhook(webhook_url, {"ts": now, "type": key, "event": "repeat", "message": f"{label} (Wiederholung)"})
+                    _post_webhook(webhook_url, repeat_entry)
         elif not is_now and was:
             # Resolved
             entry = {"ts": now, "type": key, "event": "resolved", "message": f"{label} – wieder normal"}

@@ -251,9 +251,9 @@
         if (playSound) playAlertSound();
         notifyNow.forEach(function (key) {
           var body = alertBody(key, data, t);
-          try {
-            new Notification(title, { body: body || title, tag: 'raspwatch-' + key });
-          } catch (e) {}
+try {
+              new Notification(title, { body: body || title, tag: 'raspwatch-' + key + '-' + Date.now() });
+            } catch (e) {}
         });
       };
       if (Notification.permission === 'granted') show();
@@ -271,7 +271,7 @@
       } else {
         logEl.innerHTML = log.slice().reverse().slice(0, 15).map(function (e) {
           var t = new Date((e.ts || 0) * 1000).toLocaleTimeString();
-          var cls = e.event === 'alert' ? 'alert-entry alert' : 'alert-entry resolved';
+          var cls = (e.event === 'alert' || e.event === 'repeat') ? 'alert-entry alert' : 'alert-entry resolved';
           return '<div class="' + cls + '">' + t + ' – ' + (e.message || e.type) + '</div>';
         }).join('');
       }
@@ -321,10 +321,10 @@
       }
       logEl.innerHTML = log.slice().reverse().slice(0, 10).map(function (e) {
         var t = new Date(e.ts * 1000).toLocaleTimeString();
-        var cls = e.event === 'alert' ? 'alert-entry alert' : 'alert-entry resolved';
+        var cls = (e.event === 'alert' || e.event === 'repeat') ? 'alert-entry alert' : 'alert-entry resolved';
         return '<div class="' + cls + '">' + t + ' – ' + (e.message || e.type) + '</div>';
       }).join('');
-    }).catch(function () {});
+  }).catch(function () {});
   }
 
   function fetchJson(url) {

@@ -25,12 +25,14 @@ from monitor.logs_reader import get_logs
 from monitor.settings_manager import load_settings, save_settings
 
 SAMPLER_INTERVAL = 3
+SAMPLER_INTERVAL_FAST = 1  # when alert repeat interval is 1–2 s
 HISTORY_INTERVAL = 30
 _dynamic_cache: dict | None = None
 _dynamic_cache_ts: float = 0
 _cache_lock = threading.Lock()
 _history_stop = threading.Event()
 _sampler_stop = threading.Event()
+_current_sampler_interval: float = SAMPLER_INTERVAL
 
 
 def _attach_alert_fields(out: dict) -> None:
@@ -53,11 +55,35 @@ def get_cached_dynamic() -> dict | None:
     return out
 
 
+def _get_sampler_interval() -> float:
+    """Use 1 s when alerts are enabled and any repeat interval is 1 or 2 seconds."""
+    s = load_settings()
+    if not s.get("alerts_enabled"):
+        return SAMPLER_INTERVAL
+    for key in (
+        "cpu_high_interval_sec", "cpu_low_interval_sec",
+        "temp_high_interval_sec", "temp_low_interval_sec",
+        "disk_high_interval_sec", "mem_high_interval_sec",
+    ):
+        v = s.get(key)
+        if v is not None:
+            try:
+                n = float(v)
+                if 0 < n <= 2:
+                    return SAMPLER_INTERVAL_FAST
+            except (TypeError, ValueError):
+                pass
+    return SAMPLER_INTERVAL
+
+
 def _sampler_loop() -> None:
-    global _dynamic_cache, _dynamic_cache_ts
+    global _dynamic_cache, _dynamic_cache_ts, _current_sampler_interval
     init_db()
     tick = 0
-    while not _sampler_stop.wait(timeout=SAMPLER_INTERVAL):
+    while True:
+        _current_sampler_interval = _get_sampler_interval()
+        if _sampler_stop.wait(timeout=_current_sampler_interval):
+            break
         try:
             data = collect_dynamic()
             with _cache_lock:
@@ -69,7 +95,7 @@ def _sampler_loop() -> None:
             except Exception:
                 pass
             tick += 1
-            if tick >= (HISTORY_INTERVAL // SAMPLER_INTERVAL):
+            if tick >= (HISTORY_INTERVAL // max(1, int(_current_sampler_interval))):
                 tick = 0
                 try:
                     write_snapshot(data)
@@ -162,7 +188,7 @@ async def _sse_generator():
             payload = copy.deepcopy(out)
             payload.pop("_stale", None)
             yield f"data: {json.dumps(payload)}\n\n"
-        await asyncio.sleep(SAMPLER_INTERVAL)
+        await asyncio.sleep(_current_sampler_interval)
 
 
 @app.get("/api/stream")
