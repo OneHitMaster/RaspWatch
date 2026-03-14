@@ -144,6 +144,7 @@
     var net = data.network || {};
     var volt = data.voltage || {};
     var processes = data.processes || [];
+    var cameras = data.cameras || {};
 
     setText('cpu-value', (cpu.usage_percent != null ? cpu.usage_percent + ' %' : '—'));
     setBar('cpu-bar', cpu.usage_percent);
@@ -205,6 +206,27 @@
           var label = k.replace(/_/g, ' ').toUpperCase();
           return '<div class="volt-row"><span>' + label + '</span><strong>' + (v != null ? v + ' V' : '—') + '</strong></div>';
         }).join('');
+      }
+    }
+
+    var camList = document.getElementById('camera-list');
+    var cardCameras = document.getElementById('card-cameras');
+    if (camList && cardCameras) {
+      var devs = cameras.devices || [];
+      var piCam = cameras.pi_camera;
+      var parts = [];
+      devs.forEach(function (d) {
+        parts.push('<div class="camera-row"><span class="cam-name">' + (d.name || d.device) + '</span><span class="cam-dev">' + (d.device || '') + '</span></div>');
+      });
+      if (piCam && piCam.detected) {
+        parts.push('<div class="camera-row pi-cam"><span class="cam-name">' + (piCam.type || 'Pi Camera') + '</span><span class="cam-dev">erkannt</span></div>');
+      }
+      if (parts.length) {
+        camList.innerHTML = parts.join('');
+        cardCameras.classList.remove('empty');
+      } else {
+        camList.innerHTML = 'Keine Kameras erkannt.';
+        cardCameras.classList.remove('empty');
       }
     }
 

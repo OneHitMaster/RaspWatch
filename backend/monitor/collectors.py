@@ -20,6 +20,7 @@ PROC_LOADAVG = "/proc/loadavg"
 SYS_THERMAL = Path("/sys/class/thermal")
 SYS_HWMON = Path("/sys/class/hwmon")
 SYS_BLOCK = Path("/sys/block")
+SYS_VIDEO4LINUX = Path("/sys/class/video4linux")
 VCMEM = "/usr/bin/vcgencmd"  # Raspberry Pi only
 
 
@@ -462,6 +463,33 @@ def get_voltage() -> dict[str, Any]:
     return result
 
 
+# --- Cameras (Video4Linux + Pi legacy) ---
+
+
+def get_cameras() -> dict[str, Any]:
+    """List video capture devices from /sys/class/video4linux and optional vcgencmd get_camera."""
+    result: list[dict[str, Any]] = []
+    if SYS_VIDEO4LINUX.exists():
+        for dev_dir in sorted(SYS_VIDEO4LINUX.iterdir(), key=lambda p: p.name):
+            if not dev_dir.name.startswith("video"):
+                continue
+            name = _read_file(dev_dir / "name", dev_dir.name)
+            result.append({
+                "device": dev_dir.name,
+                "name": name or dev_dir.name,
+                "path": f"/dev/{dev_dir.name}",
+            })
+    # Raspberry Pi legacy camera (vcgencmd)
+    vc_cam = _vcgencmd(["get_camera"])
+    pi_camera = None
+    if vc_cam:
+        m = re.search(r"supported=(\d)\s+detected=(\d)", vc_cam)
+        if m:
+            supported, detected = int(m.group(1)), int(m.group(2))
+            pi_camera = {"type": "Pi Camera (legacy)", "supported": supported, "detected": detected}
+    return {"devices": result, "pi_camera": pi_camera, "count": len(result) + (1 if pi_camera and pi_camera.get("detected") else 0)}
+
+
 # --- Aggregate dynamic (live) data ---
 
 
@@ -478,6 +506,7 @@ def collect_dynamic() -> dict[str, Any]:
         "network": get_network(),
         "voltage": get_voltage(),
         "processes": get_top_processes(15),
+        "cameras": get_cameras(),
         "timestamp": time.time(),
     }
 

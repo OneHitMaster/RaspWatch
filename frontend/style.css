@@ -268,6 +268,13 @@ body {
 .proc-pid { color: var(--text-muted); min-width: 2.5rem; }
 .proc-rss { color: var(--accent); min-width: 4rem; text-align: right; }
 
+.camera-list { font-size: 0.9rem; }
+.camera-row { display: flex; justify-content: space-between; align-items: center; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
+.camera-row:last-child { border-bottom: none; }
+.cam-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam-dev { color: var(--text-muted); font-size: 0.85rem; margin-left: 0.5rem; }
+.camera-row.pi-cam .cam-dev { color: var(--success); }
+
 .uptime-value {
   font-size: 1.25rem;
   font-weight: 600;
