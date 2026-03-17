@@ -35,6 +35,12 @@ def init_db() -> None:
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_metrics_ts ON metrics(ts)")
+    try:
+        from monitor.sessions import init_sessions_db
+
+        init_sessions_db()
+    except Exception:
+        pass
 
 
 def write_snapshot(data: dict[str, Any]) -> None:

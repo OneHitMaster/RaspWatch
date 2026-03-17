@@ -1,3 +1,4 @@
 # RPiMonitor Backend - Python 3.9+
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
+PyJWT==2.10.1

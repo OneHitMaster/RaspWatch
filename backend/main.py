@@ -9,19 +9,25 @@ import asyncio
 import copy
 import json
 import os
+import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Body, FastAPI, Query
+from fastapi import Body, FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from core.auth import create_access_token, require_auth_if_enabled, require_ws_auth_if_enabled, set_token_cookie
+from core.event_bus import EventBus
+from core.plugin_manager import PluginManager
 from monitor.alerts import acknowledge_alerts, check_alerts, get_alert_status, get_and_clear_notify_now, set_last_notify_now
 from monitor.collectors import collect_dynamic, collect_static
 from monitor.history import get_history, init_db, write_snapshot
 from monitor.logs_reader import get_logs
+from monitor.analytics import compare as analytics_compare, predict_time_to_threshold, trend as analytics_trend
+from monitor.sessions import add_event, end_session, get_session, list_events, list_sessions, start_session
 from monitor.settings_manager import load_settings, save_settings
 
 SAMPLER_INTERVAL = 3
@@ -33,6 +39,8 @@ _cache_lock = threading.Lock()
 _history_stop = threading.Event()
 _sampler_stop = threading.Event()
 _current_sampler_interval: float = SAMPLER_INTERVAL
+_event_bus = EventBus()
+_plugins = PluginManager(event_bus=_event_bus)
 
 
 def _attach_alert_fields(out: dict) -> None:
@@ -87,9 +95,17 @@ def _sampler_loop() -> None:
             break
         try:
             data = collect_dynamic()
+            try:
+                _plugins.on_sample(data, load_settings())
+            except Exception:
+                pass
             with _cache_lock:
                 _dynamic_cache = data
                 _dynamic_cache_ts = time.time()
+            try:
+                _event_bus.publish("metrics", {"data": copy.deepcopy(data)})
+            except Exception:
+                pass
             try:
                 _active, _notify = check_alerts(data, load_settings())
                 set_last_notify_now(_notify)
@@ -111,6 +127,10 @@ async def lifespan(app: FastAPI):
     # First sample to fill cache immediately
     try:
         data = collect_dynamic()
+        try:
+            _plugins.on_sample(data, load_settings())
+        except Exception:
+            pass
         with _cache_lock:
             global _dynamic_cache, _dynamic_cache_ts
             _dynamic_cache = data
@@ -134,7 +154,155 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = _REPO_ROOT / "web" / "dist"
+FRONTEND_FALLBACK_DIR = _REPO_ROOT / "frontend"
+
+try:
+    _plugins.load_from_settings(app, load_settings())
+except Exception:
+    pass
+
+
+@app.middleware("http")
+async def _auth_middleware(request: Request, call_next):
+    """
+    Optional JWT auth gate.
+
+    - Protects API + dynamic/static + SSE by default when enabled.
+    - Allows: /, /favicon, /docs, /openapi.json, /health, /api/auth/*
+    """
+    path = request.url.path or "/"
+    if path.startswith(("/docs", "/openapi.json", "/health", "/api/auth")):
+        return await call_next(request)
+    # Allow static frontend assets
+    if path == "/" or path.startswith(("/assets", "/favicon", "/index.html", "/style", "/app")):
+        return await call_next(request)
+    if path.startswith("/api") or path in ("/dynamic.json", "/static.json"):
+        try:
+            require_auth_if_enabled(request, load_settings())
+        except Exception as exc:
+            # FastAPI will convert HTTPException, others become 500; normalize to 401
+            from fastapi import HTTPException
+
+            if isinstance(exc, HTTPException):
+                raise
+            raise HTTPException(status_code=401, detail="Unauthorized")
+    return await call_next(request)
+
+
+@app.post("/api/auth/login")
+async def api_auth_login(data: dict = Body(default={})):
+    """
+    Login for browser/API clients.
+
+    Body: {"api_key": "..."}  (when auth_mode == "api_key")
+    Returns: {"access_token": "...", "token_type": "bearer"}
+    Also sets an HttpOnly cookie so SSE/EventSource works without headers.
+    """
+    settings = load_settings()
+    if not settings.get("auth_enabled"):
+        token = create_access_token(settings)
+        resp = Response(
+            content=json.dumps({"access_token": token, "token_type": "bearer"}),
+            media_type="application/json",
+        )
+        set_token_cookie(resp, token)
+        return resp
+    mode = (settings.get("auth_mode") or "api_key").strip()
+    if mode != "api_key":
+        return Response(content=json.dumps({"error": "auth_mode not supported"}), media_type="application/json", status_code=400)
+    provided = (data.get("api_key") or "").strip()
+    expected = (settings.get("auth_api_key") or "").strip()
+    if not expected or not secrets.compare_digest(provided, expected):
+        return Response(content=json.dumps({"error": "invalid credentials"}), media_type="application/json", status_code=401)
+    token = create_access_token(settings)
+    resp = Response(
+        content=json.dumps({"access_token": token, "token_type": "bearer"}),
+        media_type="application/json",
+    )
+    set_token_cookie(resp, token)
+    return resp
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    """
+    WebSocket for bidirectional realtime.
+
+    Auth: cookie `raspwatch_token` (preferred) or `?token=...`.
+    Server messages:
+      - {"type":"metrics","payload":{...}}
+    Client messages (initial set):
+      - {"type":"alerts:ack","keys":[...]}  or {"type":"alerts:ack"}
+    """
+    settings = load_settings()
+    try:
+        require_ws_auth_if_enabled(ws, settings)
+    except Exception:
+        await ws.close(code=4401)
+        return
+
+    await ws.accept()
+
+    send_lock = asyncio.Lock()
+
+    async def send_json(obj: dict):
+        async with send_lock:
+            try:
+                await ws.send_text(json.dumps(obj))
+            except Exception:
+                pass
+
+    async def on_metrics(ev):
+        payload = ev.payload.get("data")
+        if isinstance(payload, dict):
+            payload = copy.deepcopy(payload)
+            payload.pop("_stale", None)
+            await send_json({"type": "metrics", "payload": payload})
+
+    _event_bus.subscribe("metrics", on_metrics)
+    async def on_autodarts(ev):
+        await send_json({"type": "autodarts:event", "payload": ev.payload})
+    _event_bus.subscribe("autodarts:event", on_autodarts)
+
+    # Push latest snapshot immediately (if available)
+    snap = get_cached_dynamic()
+    if snap:
+        snap = copy.deepcopy(snap)
+        snap.pop("_stale", None)
+        await send_json({"type": "metrics", "payload": snap})
+
+    try:
+        while True:
+            msg = await ws.receive_text()
+            try:
+                data = json.loads(msg)
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            t = data.get("type")
+            if t == "alerts:ack":
+                keys = data.get("keys") if isinstance(data.get("keys"), list) else None
+                try:
+                    acknowledge_alerts(keys)
+                except Exception:
+                    pass
+                await send_json({"type": "alerts:ack:ok", "payload": {"ok": True}})
+            else:
+                await send_json({"type": "error", "payload": {"message": "unknown message type"}})
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        _event_bus.unsubscribe_all("metrics")
+        _event_bus.unsubscribe_all("autodarts:event")
+        try:
+            await ws.close()
+        except Exception:
+            pass
 
 
 @app.get("/api")
@@ -150,6 +318,7 @@ async def api_info_root():
         "alerts": "/api/alerts",
         "history": "/api/history",
         "settings": "/api/settings",
+        "plugins": _plugins.loaded_names,
         "copyright": "© 2026 TheD3vil",
     }
 
@@ -280,18 +449,92 @@ async def api_settings_post(data: dict = Body(default={})):
     return save_settings(data)
 
 
+@app.post("/api/sessions/start")
+async def api_sessions_start(data: dict = Body(default={})):
+    kind = (data.get("kind") or "generic").strip()
+    meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+    return start_session(kind=kind, meta=meta)
+
+
+@app.post("/api/sessions/end")
+async def api_sessions_end(data: dict = Body(default={})):
+    sid = data.get("id")
+    try:
+        sid = int(sid)
+    except Exception:
+        return Response(content=json.dumps({"error": "invalid id"}), media_type="application/json", status_code=400)
+    out = end_session(session_id=sid)
+    if not out:
+        return Response(content=json.dumps({"error": "not found"}), media_type="application/json", status_code=404)
+    return out
+
+
+@app.get("/api/sessions")
+async def api_sessions_list(kind: str | None = Query(None), limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
+    return {"data": list_sessions(kind=kind, limit=limit, offset=offset)}
+
+
+@app.get("/api/sessions/{session_id}")
+async def api_sessions_get(session_id: int):
+    s = get_session(session_id=session_id)
+    if not s:
+        return Response(content=json.dumps({"error": "not found"}), media_type="application/json", status_code=404)
+    return s
+
+
+@app.post("/api/sessions/{session_id}/events")
+async def api_sessions_add_event(session_id: int, data: dict = Body(default={})):
+    event_type = (data.get("type") or "event").strip()
+    payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+    return add_event(session_id=session_id, event_type=event_type, payload=payload)
+
+
+@app.get("/api/sessions/{session_id}/events")
+async def api_sessions_list_events(session_id: int, limit: int = Query(200, ge=1, le=2000), offset: int = Query(0, ge=0)):
+    return {"data": list_events(session_id=session_id, limit=limit, offset=offset)}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/analytics/compare")
+async def api_analytics_compare(metric: str = Query("cpu"), period: str = Query("today")):
+    allowed = {"cpu", "mem", "swap", "disk", "temp_cpu", "temp_pmic", "temp_rp1"}
+    if metric not in allowed:
+        return Response(content=json.dumps({"error": "invalid metric"}), media_type="application/json", status_code=400)
+    if period not in {"today", "yesterday", "week", "month"}:
+        return Response(content=json.dumps({"error": "invalid period"}), media_type="application/json", status_code=400)
+    return analytics_compare(metric=metric, period=period)  # type: ignore[arg-type]
+
+
+@app.get("/api/analytics/trend")
+async def api_analytics_trend(metric: str = Query("cpu"), window_min: int = Query(30, ge=5, le=24 * 60)):
+    allowed = {"cpu", "mem", "swap", "disk", "temp_cpu", "temp_pmic", "temp_rp1"}
+    if metric not in allowed:
+        return Response(content=json.dumps({"error": "invalid metric"}), media_type="application/json", status_code=400)
+    return analytics_trend(metric=metric, window_min=window_min)  # type: ignore[arg-type]
+
+
+@app.get("/api/analytics/predict")
+async def api_analytics_predict(metric: str = Query("mem"), threshold: float = Query(90), window_min: int = Query(60, ge=5, le=24 * 60)):
+    allowed = {"cpu", "mem", "swap", "disk", "temp_cpu", "temp_pmic", "temp_rp1"}
+    if metric not in allowed:
+        return Response(content=json.dumps({"error": "invalid metric"}), media_type="application/json", status_code=400)
+    return predict_time_to_threshold(metric=metric, threshold=float(threshold), window_min=window_min)  # type: ignore[arg-type]
+
+
 # Static files (frontend) – mount last so API routes take precedence
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+elif FRONTEND_FALLBACK_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_FALLBACK_DIR), html=True), name="frontend_legacy")
 
 
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", 9090))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    log_level = os.environ.get("LOG_LEVEL", "info")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level=log_level)

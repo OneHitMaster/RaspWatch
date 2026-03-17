@@ -1,0 +1,11 @@
+services:
+  raspwatch:
+    build: .
+    ports:
+      - "9090:9090"
+    environment:
+      - PORT=9090
+    volumes:
+      - ./backend:/app/backend
+    restart: unless-stopped
+

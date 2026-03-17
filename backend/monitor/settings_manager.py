@@ -19,8 +19,21 @@ DEFAULTS = {
     "log_file_path": "",
     "theme": "dark",
     "copyright": "© 2026 TheD3vil",
+    # Plugins
+    "plugins_enabled": ["autodarts"],
+    "plugins_config": {},
+    # Auth (optional)
+    "auth_enabled": False,
+    "auth_mode": "api_key",  # api_key | disabled
+    "auth_api_key": "",
+    "auth_jwt_secret": "",
+    "auth_jwt_exp_minutes": 720,
     "alerts_enabled": False,
     "alerts_sound": True,
+    # Smart alerts (debounce / sustained problems)
+    "alerts_sustain_sec": 10,
+    "alerts_anomaly_enabled": False,
+    "alerts_anomaly_cpu_spike": 30,  # percentage points jump vs previous sample
     # CPU – RPi5: Warnung bei längerer Vollast
     "cpu_high_enabled": True,
     "cpu_high_value": 85,

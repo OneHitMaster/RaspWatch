@@ -26,6 +26,8 @@ _alert_last_notify_ts: dict[str, float] = {}
 _alert_log: deque[dict[str, Any]] = deque(maxlen=ALERT_LOG_MAX)
 _log_next_id: int = 0
 _acknowledged: set[str] = set()  # Quittierte Alerts – keine Wiederholungs-Meldungen mehr bis zur Auflösung
+_pending_since: dict[str, float] = {}  # sustained detection: first time condition became true
+_last_values: dict[str, float] = {}  # anomaly detection baselines
 
 
 def _next_log_id() -> int:
@@ -109,6 +111,9 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
     mem = (data.get("memory") or {}).get("usage_percent")
     webhook_url = (settings.get("webhook_url") or "").strip()
     now = time.time()
+    sustain_sec = _get_float(settings, "alerts_sustain_sec", 10)
+    if sustain_sec < 0:
+        sustain_sec = 0
 
     def rule(
         key: str,
@@ -124,69 +129,111 @@ def check_alerts(data: dict[str, Any], settings: dict[str, Any]) -> tuple[list[s
             return actual >= value
         return actual <= value
 
+    # sustained gating: condition must hold for sustain_sec before becoming "active"
     active: list[str] = []
+    def sustained(key: str, cond: bool) -> bool:
+        if not cond:
+            _pending_since.pop(key, None)
+            return False
+        if sustain_sec <= 0:
+            return True
+        since = _pending_since.get(key)
+        if since is None:
+            _pending_since[key] = now
+            return False
+        return (now - since) >= sustain_sec
+
     # cpu_high
-    if rule(
+    cpu_high_cond = rule(
         "cpu_high",
         _get_bool(settings, "cpu_high_enabled", True),
         _get_float(settings, "cpu_high_value", 90),
         0,
         True,
         cpu,
-    ):
+    )
+    if sustained("cpu_high", cpu_high_cond):
         active.append("cpu_high")
     # cpu_low
-    if rule(
+    cpu_low_cond = rule(
         "cpu_low",
         _get_bool(settings, "cpu_low_enabled"),
         _get_float(settings, "cpu_low_value", 10),
         0,
         False,
         cpu,
-    ):
+    )
+    if sustained("cpu_low", cpu_low_cond):
         active.append("cpu_low")
     # temp_high
-    if rule(
+    temp_high_cond = rule(
         "temp_high",
         _get_bool(settings, "temp_high_enabled", True),
         _get_float(settings, "temp_high_value", 80),
         0,
         True,
         temp,
-    ):
+    )
+    if sustained("temp_high", temp_high_cond):
         active.append("temp_high")
     # temp_low (e.g. under 40°C)
-    if rule(
+    temp_low_cond = rule(
         "temp_low",
         _get_bool(settings, "temp_low_enabled"),
         _get_float(settings, "temp_low_value", 40),
         0,
         False,
         temp,
-    ):
+    )
+    if sustained("temp_low", temp_low_cond):
         active.append("temp_low")
     # disk_high
-    if rule(
+    disk_high_cond = rule(
         "disk_high",
         _get_bool(settings, "disk_high_enabled", True),
         _get_float(settings, "disk_high_value", 90),
         0,
         True,
         disk,
-    ):
+    )
+    if sustained("disk_high", disk_high_cond):
         active.append("disk_high")
     # mem_high
-    if rule(
+    mem_high_cond = rule(
         "mem_high",
         _get_bool(settings, "mem_high_enabled"),
         _get_float(settings, "mem_high_value", 90),
         0,
         True,
         mem,
-    ):
+    )
+    if sustained("mem_high", mem_high_cond):
         active.append("mem_high")
 
     notify_now: list[str] = []
+
+    # anomaly: cpu spike (event-only; does not become active)
+    if _get_bool(settings, "alerts_anomaly_enabled"):
+        try:
+            spike = _get_float(settings, "alerts_anomaly_cpu_spike", 30)
+            if cpu is not None:
+                prev = _last_values.get("cpu")
+                _last_values["cpu"] = float(cpu)
+                if prev is not None and (float(cpu) - float(prev)) >= spike:
+                    entry = {
+                        "id": _next_log_id(),
+                        "ts": now,
+                        "type": "cpu_spike",
+                        "event": "anomaly",
+                        "message": f"CPU Spike: {prev:.1f}% → {float(cpu):.1f}%",
+                    }
+                    _alert_log.append(entry)
+                    _save_persisted()
+                    notify_now.append("cpu_spike")
+                    if webhook_url:
+                        _post_webhook(webhook_url, entry)
+        except Exception:
+            pass
     interval_settings = {
         "cpu_high": _get_float(settings, "cpu_high_interval_sec", 0),
         "cpu_low": _get_float(settings, "cpu_low_interval_sec", 0),
